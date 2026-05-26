@@ -1,136 +1,244 @@
 // ============================================================
-// MOCK CENTRALIZADO — Hospital Santa Ana (POC)
-// ============================================================
-// ATENÇÃO: todos os dados aqui são SIMULADOS para demonstração.
-// Não refletem integração real com sensores ou sistemas externos.
-// Substitua as exportações por chamadas de API quando disponível.
+// MOCK CENTRALIZADO — Hospital Santa Ana
+// Estrutura espelha o backend real (séries com timestamps unix).
 // ============================================================
 
-import type { HospitalMockData } from '../types/telemetry';
+import type {
+  Installation,
+  TankGroup,
+  ContextReservoir,
+  Alert,
+  SeriesPoint,
+  DashboardSnapshot,
+  InstallationMetrics,
+  WindowKey,
+} from '../types/telemetry';
 
-// Gera rótulos horários para 24h (00:00 … 23:00)
-function makeHours(): string[] {
-  return Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+// ── Instalação principal ────────────────────────────────────
+export const installations: Installation[] = [
+  {
+    id: 'hospital-santa-ana',
+    name: 'Hospital Santa Ana',
+    address: 'R. Prof. Edgar de Moraes, 707 — Campo da Vila, Santana de Parnaíba — SP',
+    lat: -23.4395,
+    lng: -46.9173,
+    status: 'online',
+  },
+];
+
+// ── Bounds aproximados de Santana de Parnaíba ───────────────
+export const santanaBounds = {
+  north: -23.420,
+  south: -23.460,
+  west:  -46.940,
+  east:  -46.895,
+};
+
+// ── Grupos de caixas superiores (monitorados) ───────────────
+export const tankGroups: TankGroup[] = [
+  {
+    id: 'grupo-1',
+    name: 'Grupo 1',
+    tanks: 4,
+    capacityPerTankLiters: 10_000,
+    totalCapacityLiters: 40_000,
+    levelPct: 78,
+    status: 'online',
+    estimatedAutonomyHours: 38,
+  },
+  {
+    id: 'grupo-2',
+    name: 'Grupo 2',
+    tanks: 4,
+    capacityPerTankLiters: 10_000,
+    totalCapacityLiters: 40_000,
+    levelPct: 64,
+    status: 'online',
+    estimatedAutonomyHours: 30,
+  },
+];
+
+// ── Reservatórios de recalque (contexto hidráulico) ─────────
+export const contextReservoirs: ContextReservoir[] = [
+  { id: 'recalque-1', name: 'Recalque 1', capacityLiters: 40_000 },
+  { id: 'recalque-2', name: 'Recalque 2', capacityLiters: 40_000 },
+];
+
+// ── Alertas ─────────────────────────────────────────────────
+export const alerts: Alert[] = [
+  {
+    id: 'a-001',
+    severity: 'attention',
+    message: 'Grupo 2 abaixo do nível ideal — 64% (mínimo recomendado: 70%)',
+    timeLabel: 'há 12 min',
+  },
+  {
+    id: 'a-002',
+    severity: 'info',
+    message: 'Consumo acima da média no período da manhã (6h–10h)',
+    timeLabel: 'há 1h 42 min',
+  },
+  {
+    id: 'a-003',
+    severity: 'info',
+    message: 'Última leitura recebida com sucesso',
+    timeLabel: 'há 1 min',
+  },
+];
+
+// ── Helpers para gerar séries ───────────────────────────────
+const HOUR_MS = 60 * 60 * 1000;
+const MIN_MS  = 60 * 1000;
+
+interface WindowSpec { points: number; stepMs: number; }
+
+const windowSpecs: Record<WindowKey, WindowSpec> = {
+  '1h':  { points: 60,  stepMs: 1 * MIN_MS },     // 1h, ponto a cada 1 min
+  '6h':  { points: 72,  stepMs: 5 * MIN_MS },     // 6h, ponto a cada 5 min
+  '24h': { points: 96,  stepMs: 15 * MIN_MS },    // 24h, ponto a cada 15 min
+  '7d':  { points: 168, stepMs: 1 * HOUR_MS },    // 7d, ponto a cada 1 h
+  '30d': { points: 180, stepMs: 4 * HOUR_MS },    // 30d, ponto a cada 4 h
+};
+
+// Curva senoidal calibrada com picos manhã (7h-10h) e noite (18h-21h)
+function flowCurve(hour: number, base: number, peakMorning: number, peakEvening: number): number {
+  const h = hour % 24;
+  const morningPeak = Math.exp(-Math.pow((h - 8) / 1.7, 2)) * peakMorning;
+  const eveningPeak = Math.exp(-Math.pow((h - 19) / 2.0, 2)) * peakEvening;
+  const lunchPeak   = Math.exp(-Math.pow((h - 13) / 1.4, 2)) * (peakMorning * 0.4);
+  return base + morningPeak + eveningPeak + lunchPeak;
 }
 
-const HOURS = makeHours();
+// Curva de nível: cai durante consumo e enche lentamente
+function levelCurve(hour: number, baseline: number, amplitude: number, offset = 0): number {
+  const h = (hour + offset) % 24;
+  const dip1 = Math.exp(-Math.pow((h - 8) / 2.0, 2)) * amplitude;       // dip manhã
+  const dip2 = Math.exp(-Math.pow((h - 19) / 2.2, 2)) * (amplitude * 0.7);  // dip noite
+  return baseline - dip1 - dip2;
+}
 
-// ── Nível Grupo 1 (%): dip matinal (6–10h), recuperação à tarde ──
-const LEVEL_G1_VALUES = [
-  82, 81, 81, 80, 80, 79,   // 00–05
-  76, 72, 70, 72, 74, 75,   // 06–11
-  76, 77, 78, 78, 77, 76,   // 12–17
-  75, 74, 75, 76, 77, 78,   // 18–23
+function pressureCurve(hour: number, base: number, range: number): number {
+  const h = hour % 24;
+  // Pressão sobe quando consumo cai (madrugada) e cai quando consumo sobe
+  const drop = Math.exp(-Math.pow((h - 8) / 2.0, 2)) * range +
+               Math.exp(-Math.pow((h - 19) / 2.2, 2)) * (range * 0.8);
+  return base - drop;
+}
+
+/**
+ * Gera uma série temporal com `points` pontos terminando em "agora",
+ * espaçados `stepMs`. O gerador recebe a hora (0..24) e devolve o valor.
+ */
+function buildSeries(
+  spec: WindowSpec,
+  generator: (hour: number, idx: number) => number,
+  jitter = 0,
+): SeriesPoint[] {
+  const now = Date.now();
+  const start = now - spec.points * spec.stepMs;
+  const result: SeriesPoint[] = [];
+  for (let i = 0; i < spec.points; i++) {
+    const t = start + i * spec.stepMs;
+    const d = new Date(t);
+    const hour = d.getHours() + d.getMinutes() / 60;
+    const base = generator(hour, i);
+    const noise = jitter ? (Math.sin(i * 1.7) + Math.cos(i * 0.3)) * jitter * 0.5 : 0;
+    result.push({ t, v: +(base + noise).toFixed(2) });
+  }
+  return result;
+}
+
+/**
+ * Constrói um snapshot completo do dashboard para uma janela.
+ * Inclui séries de nível, vazão (2 grupos) e pressão (2 grupos).
+ */
+export function buildDashboardSnapshot(windowKey: WindowKey = '24h'): DashboardSnapshot {
+  const spec = windowSpecs[windowKey];
+
+  // Nível médio: combinação dos dois grupos (G1: 78%, G2: 64%) → média ~71
+  const nivel = buildSeries(spec, (h) => levelCurve(h, 75, 14, 0), 0.8);
+  // Vazão 1: base 60 L/min, picos manhã/noite
+  const vazao1 = buildSeries(spec, (h) => Math.max(0, flowCurve(h, 50, 90, 70)), 4);
+  // Vazão 2: base 45 L/min, picos menores
+  const vazao2 = buildSeries(spec, (h) => Math.max(0, flowCurve(h, 40, 70, 55)), 3);
+  // Pressão 1: 3.5 MCA base
+  const pressao1 = buildSeries(spec, (h) => pressureCurve(h, 3.6, 0.9), 0.05);
+  // Pressão 2: 3.2 MCA base
+  const pressao2 = buildSeries(spec, (h) => pressureCurve(h, 3.3, 0.8), 0.05);
+
+  const last = (arr: SeriesPoint[]) => (arr.length ? arr[arr.length - 1].v : 0);
+
+  const nivelAtual = +last(nivel).toFixed(1);
+  const vazao1Atual = +last(vazao1).toFixed(2);
+  const vazao2Atual = +last(vazao2).toFixed(2);
+  const consumoAtual = +((vazao1Atual + vazao2Atual) / 1000 * 60).toFixed(2); // L/min → m³/h
+  const consumoMedio = +(
+    [...vazao1, ...vazao2].reduce((s, p) => s + p.v, 0) /
+    (vazao1.length + vazao2.length) / 1000 * 60
+  ).toFixed(2);
+
+  const estado: DashboardSnapshot['estado'] =
+    nivelAtual >= 70 ? 'Confortável' :
+    nivelAtual >= 40 ? 'Atenção'    :
+    nivelAtual > 0   ? 'Crítico'    : 'Sem leitura';
+
+  const autonomiaDias = consumoAtual > 0
+    ? +(Math.max(0, (nivelAtual / 100) * 80_000 / (consumoAtual * 1000) / 24)).toFixed(1)
+    : 0;
+
+  return {
+    nivelAtual,
+    estado,
+    autonomiaDias,
+    consumoMedio,
+    consumoAtual,
+    vazao1: vazao1Atual,
+    vazao2: vazao2Atual,
+    pressao1: +last(pressao1).toFixed(2),
+    pressao2: +last(pressao2).toFixed(2),
+    ultimaLeitura: new Date(nivel.length ? nivel[nivel.length - 1].t : Date.now()),
+    series: { nivel, vazao1, vazao2, pressao1, pressao2 },
+  };
+}
+
+/**
+ * Métricas resumidas pra página de Installation (hero + KPIs).
+ */
+export function buildInstallationMetrics(): InstallationMetrics {
+  const snap = buildDashboardSnapshot('24h');
+  // Spark: últimos 12 pontos de nível (suaviza pra o card)
+  const spark = snap.series.nivel.slice(-12).map((p) => p.v);
+  const sumVazao = snap.vazao1 + snap.vazao2; // L/min
+  // Consumo "hoje": integra vazão da janela 24h
+  const consumoHoje = +(
+    [...snap.series.vazao1, ...snap.series.vazao2].reduce((s, p) => s + p.v, 0) /
+    (snap.series.vazao1.length + snap.series.vazao2.length) *
+    24 * 60 / 1000
+  ).toFixed(2);
+
+  // Variação vs dia anterior (mock fixo positivo)
+  const variacaoPct = 8.4;
+
+  // Total no mês (mock)
+  const totalMes = +(consumoHoje * 22).toFixed(1);
+
+  return {
+    consumoHoje,
+    variacaoPct,
+    vazao: +sumVazao.toFixed(1),
+    pressao: snap.pressao1,
+    totalMes,
+    anomalias: 2,
+    nivel: snap.nivelAtual,
+    spark,
+    ultimaLeituraMin: 2,
+  };
+}
+
+export const WINDOW_OPTIONS: { value: WindowKey; label: string }[] = [
+  { value: '1h',  label: '1h' },
+  { value: '6h',  label: '6h' },
+  { value: '24h', label: '24h' },
+  { value: '7d',  label: '7 dias' },
+  { value: '30d', label: '30 dias' },
 ];
-
-// ── Nível Grupo 2 (%): dip matinal + vespertino, recuperação parcial ──
-const LEVEL_G2_VALUES = [
-  70, 69, 68, 68, 67, 66,   // 00–05
-  62, 57, 55, 58, 61, 63,   // 06–11
-  65, 66, 66, 65, 64, 61,   // 12–17
-  58, 56, 59, 61, 63, 64,   // 18–23
-];
-
-// ── Vazão estimada (m³/h): picos às 6–10h e 18–21h; soma ≈ 46 m³ ──
-const FLOW_VALUES = [
-  0.8, 0.7, 0.7, 0.7, 0.8, 1.1,   // 00–05
-  3.4, 4.1, 3.7, 2.6, 2.1, 1.8,   // 06–11
-  1.9, 1.9, 1.7, 1.5, 1.5, 1.7,   // 12–17
-  2.7, 3.1, 2.8, 2.1, 1.4, 1.2,   // 18–23
-]; // Soma ≈ 46,0 m³
-
-export const hospitalSantaAnaMock: HospitalMockData = {
-  // ── Instalação ──────────────────────────────────────────────
-  installation: {
-    name: 'Hospital Santa Ana',
-    city: 'Santana de Parnaíba',
-    poc: true,
-    referenceDailyConsumptionM3: 46.11,
-    monitoredCapacityLiters: 80_000,
-    lastReadingLabel: 'Última leitura simulada',
-    lastReadingSimulatedAt: '26/05/2026 09:17',
-    status: 'attention',  // G2 abaixo do nível ideal
-  },
-
-  // ── Reservatórios de recalque (NÃO monitorados) ─────────────
-  contextReservoirs: [
-    {
-      id: 'recalque-1',
-      name: 'Recalque 1',
-      capacityLiters: 40_000,
-      monitored: false,
-      label: 'Não monitorado nesta etapa',
-    },
-    {
-      id: 'recalque-2',
-      name: 'Recalque 2',
-      capacityLiters: 40_000,
-      monitored: false,
-      label: 'Não monitorado nesta etapa',
-    },
-  ],
-
-  // ── Grupos de caixas superiores (MONITORADOS) ───────────────
-  tankGroups: [
-    {
-      id: 'grupo-1',
-      name: 'Grupo 1',
-      tanks: 4,
-      capacityPerTankLiters: 10_000,
-      totalCapacityLiters: 40_000,
-      monitored: true,
-      levelPct: 78,
-      status: 'normal',
-      estimatedAutonomyHours: 38,
-    },
-    {
-      id: 'grupo-2',
-      name: 'Grupo 2',
-      tanks: 4,
-      capacityPerTankLiters: 10_000,
-      totalCapacityLiters: 40_000,
-      monitored: true,
-      levelPct: 64,
-      status: 'attention',   // abaixo do nível ideal de 70%
-      estimatedAutonomyHours: 30,
-    },
-  ],
-
-  // ── Séries temporais 24h (simuladas) ────────────────────────
-  series: {
-    levelG1Hourly: HOURS.map((hour, i) => ({
-      hour,
-      value: LEVEL_G1_VALUES[i],
-    })),
-    levelG2Hourly: HOURS.map((hour, i) => ({
-      hour,
-      value: LEVEL_G2_VALUES[i],
-    })),
-    estimatedFlowM3Hourly: HOURS.map((hour, i) => ({
-      hour,
-      value: FLOW_VALUES[i],
-    })),
-  },
-
-  // ── Alertas simulados ────────────────────────────────────────
-  alerts: [
-    {
-      id: 'alert-001',
-      severity: 'attention',
-      message: 'Grupo 2 abaixo do nível ideal — 64% (mínimo recomendado: 70%)',
-      timeLabel: 'há 12 min',
-    },
-    {
-      id: 'alert-002',
-      severity: 'info',
-      message: 'Consumo acima da média no período da manhã (6h–10h)',
-      timeLabel: 'há 1h 42 min',
-    },
-    {
-      id: 'alert-003',
-      severity: 'info',
-      message: 'Última leitura simulada recebida com sucesso',
-      timeLabel: 'há 1 min',
-    },
-  ],
-};

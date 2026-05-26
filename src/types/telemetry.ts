@@ -1,28 +1,32 @@
-// ============================================================
-// Tipos base — Hospital Santa Ana POC
-// Centralizados aqui para facilitar troca futura por API real
-// ============================================================
+// Tipos do domínio — Hospital Santa Ana
 
-export type SystemStatus = 'normal' | 'attention' | 'critical';
+export type InstallationStatus = 'online' | 'alert' | 'offline';
 export type AlertSeverity = 'info' | 'attention' | 'critical';
 
 export interface Installation {
-  name: string;
-  city: string;
-  poc: true;
-  referenceDailyConsumptionM3: number;
-  monitoredCapacityLiters: number;
-  lastReadingLabel: string;
-  lastReadingSimulatedAt: string;
-  status: SystemStatus;
-}
-
-export interface ContextReservoir {
   id: string;
   name: string;
-  capacityLiters: number;
-  monitored: false;
-  label: string;
+  address: string;
+  lat: number;
+  lng: number;
+  status: InstallationStatus;
+}
+
+export interface SeriesPoint {
+  t: number;   // unix ms
+  v: number;
+}
+
+export interface InstallationMetrics {
+  consumoHoje: number;
+  variacaoPct: number;
+  vazao: number;
+  pressao: number;
+  totalMes: number;
+  anomalias: number;
+  nivel: number;
+  spark: number[];
+  ultimaLeituraMin: number;
 }
 
 export interface TankGroup {
@@ -31,21 +35,35 @@ export interface TankGroup {
   tanks: number;
   capacityPerTankLiters: number;
   totalCapacityLiters: number;
-  monitored: true;
   levelPct: number;
-  status: SystemStatus;
+  status: InstallationStatus;
   estimatedAutonomyHours: number;
 }
 
-export interface HourlyPoint {
-  hour: string;   // "00:00", "01:00" ...
-  value: number;
+export interface ContextReservoir {
+  id: string;
+  name: string;
+  capacityLiters: number;
 }
 
-export interface MockSeries {
-  levelG1Hourly: HourlyPoint[];
-  levelG2Hourly: HourlyPoint[];
-  estimatedFlowM3Hourly: HourlyPoint[];
+export interface DashboardSnapshot {
+  nivelAtual: number;
+  estado: 'Confortável' | 'Atenção' | 'Crítico' | 'Sem leitura';
+  autonomiaDias: number;
+  consumoMedio: number;
+  consumoAtual: number;
+  vazao1: number;
+  vazao2: number;
+  pressao1: number;
+  pressao2: number;
+  ultimaLeitura: Date;
+  series: {
+    nivel: SeriesPoint[];
+    vazao1: SeriesPoint[];
+    vazao2: SeriesPoint[];
+    pressao1: SeriesPoint[];
+    pressao2: SeriesPoint[];
+  };
 }
 
 export interface Alert {
@@ -55,10 +73,5 @@ export interface Alert {
   timeLabel: string;
 }
 
-export interface HospitalMockData {
-  installation: Installation;
-  contextReservoirs: ContextReservoir[];
-  tankGroups: TankGroup[];
-  series: MockSeries;
-  alerts: Alert[];
-}
+export type WindowKey = '1h' | '6h' | '24h' | '7d' | '30d';
+export type FilterMode = 'janela' | 'periodo';

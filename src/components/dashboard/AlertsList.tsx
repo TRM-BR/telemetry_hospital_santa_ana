@@ -4,6 +4,7 @@ import { cn } from '../../lib/cn';
 
 interface AlertsListProps {
   alerts: Alert[];
+  title?: string;
 }
 
 const iconMap: Record<AlertSeverity, typeof AlertTriangle> = {
@@ -13,22 +14,22 @@ const iconMap: Record<AlertSeverity, typeof AlertTriangle> = {
 };
 
 const toneMap: Record<AlertSeverity, { row: string; icon: string }> = {
-  info:      { row: 'border-border',          icon: 'text-primary' },
-  attention: { row: 'border-amber-400/40',    icon: 'text-amber-600' },
-  critical:  { row: 'border-destructive/40',  icon: 'text-destructive' },
+  info:      { row: 'border-border',         icon: 'text-primary' },
+  attention: { row: 'border-accent/40',      icon: 'text-amber-600' },
+  critical:  { row: 'border-destructive/40', icon: 'text-destructive' },
 };
 
-export function AlertsList({ alerts }: AlertsListProps) {
+export function AlertsList({ alerts, title = 'Alertas recentes' }: AlertsListProps) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in" style={{ animationDelay: '320ms' }}>
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in">
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Alertas</p>
-          <h3 className="mt-1 text-lg font-semibold text-foreground">
-            Eventos simulados
-          </h3>
+          <h3 className="mt-1 text-lg font-semibold text-foreground">{title}</h3>
         </div>
-        <span className="text-[11px] text-muted-foreground">{alerts.length} evento{alerts.length !== 1 ? 's' : ''}</span>
+        <span className="text-[11px] text-muted-foreground">
+          {alerts.length} evento{alerts.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
       <ul className="space-y-2">
@@ -52,10 +53,8 @@ export function AlertsList({ alerts }: AlertsListProps) {
           );
         })}
       </ul>
-
-      <p className="mt-4 text-[10px] text-muted-foreground italic">
-        Dados simulados — sem integração com sensores reais nesta etapa.
-      </p>
     </div>
   );
 }
+
+export default AlertsList;
