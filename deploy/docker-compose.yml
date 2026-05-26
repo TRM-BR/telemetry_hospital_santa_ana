@@ -1,0 +1,42 @@
+# deploy/docker-compose.yml — Hospital Santa Ana POC
+#
+# Sobe um nginx que serve o build estático do React na porta 8082.
+# Reinicia automaticamente com o servidor.
+#
+# Pré-requisito:
+#   1. Build do frontend já gerado:
+#      cd /root/applications/web/telemetry_hospital_santa_ana
+#      npm run build
+#
+# Uso:
+#   cd /root/applications/web/telemetry_hospital_santa_ana/deploy
+#   docker compose up -d
+#
+# Parar:
+#   docker compose down
+#
+# Atualizar após novo build:
+#   cd /root/applications/web/telemetry_hospital_santa_ana
+#   npm run build
+#   (o nginx serve o dist/ em tempo real — sem restart necessário)
+
+services:
+
+  hospital-santa-ana-nginx:
+    image: nginx:1.27-alpine
+    container_name: hospital-santa-ana-nginx
+    restart: unless-stopped
+
+    ports:
+      - "8082:8082"
+
+    volumes:
+      # Nginx config
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Build do frontend (gerado por: npm run build)
+      - /root/applications/web/telemetry_hospital_santa_ana/dist:/usr/share/nginx/html:ro
+
+    logging:
+      driver: journald
+      options:
+        tag: hospital-santa-ana-nginx
