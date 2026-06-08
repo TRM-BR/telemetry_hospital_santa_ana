@@ -23,22 +23,26 @@ function FlowPipe({
   width = 10,
   fast = false,
   muted = false,
+  noBase = false,
 }: {
   d: string;
   width?: number;
   fast?: boolean;
   muted?: boolean;
+  noBase?: boolean;
 }) {
   return (
     <>
-      <path
-        d={d}
-        stroke={muted ? 'url(#schema-pipe)' : 'url(#schema-pipe)'}
-        strokeWidth={width}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      {!noBase && (
+        <path
+          d={d}
+          stroke={muted ? 'url(#schema-pipe)' : 'url(#schema-pipe)'}
+          strokeWidth={width}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
       <path
         d={d}
         stroke="hsl(var(--primary-glow))"
@@ -143,7 +147,7 @@ function GroupBlock({
       <polygon points={`${layout.pipeX},336 ${layout.pipeX - 7},321 ${layout.pipeX + 7},321`} fill="hsl(var(--primary-glow))" />
       <Manometer x={layout.manometerX} y={275} value={pressao} label={index === 0 ? 'P1' : 'P2'} />
 
-      <g transform={`translate(${layout.pipeX - 48},340)`}>
+      <g transform={`translate(${layout.pipeX + (index === 0 ? -118 : 22)},340)`}>
         <rect width="96" height="26" rx="13" fill="hsl(205 80% 96%)" stroke="hsl(205 60% 78%)" />
         <text x="48" y="17" textAnchor="middle" fontSize="10" fontWeight="800" fill="hsl(var(--primary))" fontFamily="ui-monospace, monospace">
           {vazao.toFixed(1)} L/min
@@ -228,7 +232,7 @@ export function HospitalHydraulicScheme({
         </div>
       </div>
 
-      <div className="relative mx-4 mb-6 overflow-x-auto rounded-2xl border border-border bg-card">
+      <div className="relative mx-4 mb-6 overflow-x-auto rounded-2xl border border-border bg-card pt-12">
         <div className="pointer-events-none absolute right-4 top-4 z-10 hidden gap-2 lg:flex">
           <Pill label="Vazão total" value={`${(flow1 + flow2).toFixed(1)} L/min`} />
           <Pill label="Pressão" value={`${((pressao1 + pressao2) / 2).toFixed(2)} mca`} />
@@ -318,8 +322,9 @@ export function HospitalHydraulicScheme({
           <GroupBlock group={group2} index={1} vazao={flow2} pressao={pressao2} />
 
           <Building />
-          <FlowPipe d="M 682 330 L 682 376 L 830 376" width={10} />
-          <FlowPipe d="M 992 330 L 992 376 L 830 376" width={10} />
+          <FlowPipe d="M 682 330 L 682 376 L 830 376" width={10} noBase />
+          <FlowPipe d="M 992 330 L 992 376 L 830 376" width={10} noBase />
+          <polygon points="830,396 821,380 839,380" fill="hsl(var(--primary-glow))" />
           <text x="830" y="366" textAnchor="middle" fontSize="11" fontWeight="800" fill="hsl(var(--primary))" fontFamily="Inter, sans-serif">
             distribuição por gravidade
           </text>
