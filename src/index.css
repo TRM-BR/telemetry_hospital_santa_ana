@@ -138,7 +138,11 @@
   /* ===== Esquema hidráulico ===== */
   @keyframes schema-flow {
     0%   { stroke-dashoffset: 0; }
-    100% { stroke-dashoffset: -48; }
+    100% { stroke-dashoffset: -36; }
+  }
+  @keyframes schema-flow-fast {
+    0%   { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -44; }
   }
   @keyframes schema-tank-wave {
     0%   { transform: translateX(0); }
@@ -148,8 +152,19 @@
     0%       { opacity: 0.6; transform: scale(0.4); }
     80%, 100%{ opacity: 0;   transform: scale(1); }
   }
+  @keyframes schema-node-breath {
+    0%, 100% { filter: drop-shadow(0 0 3px currentColor); opacity: 0.9; }
+    50%      { filter: drop-shadow(0 0 10px currentColor); opacity: 1; }
+  }
+  @keyframes shimmer-text {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
   .schema-flow {
     animation: schema-flow 1.6s linear infinite;
+  }
+  .schema-flow-fast {
+    animation: schema-flow-fast 1.05s linear infinite;
   }
   .schema-tank-wave {
     animation: schema-tank-wave 6s linear infinite;
@@ -161,6 +176,25 @@
     transform-origin: center;
     transform-box: fill-box;
     animation: schema-lora 1.8s ease-out infinite;
+  }
+  .schema-node-breath {
+    color: hsl(140 60% 45%);
+    transform-origin: center;
+    transform-box: fill-box;
+    animation: schema-node-breath 2.4s ease-in-out infinite;
+  }
+  .shimmer-text {
+    background: linear-gradient(
+      110deg,
+      hsl(var(--foreground)) 28%,
+      hsl(var(--primary)) 48%,
+      hsl(var(--foreground)) 68%
+    );
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer-text 6s linear infinite;
   }
 
   /* ===== Leaflet overrides ===== */
@@ -191,9 +225,12 @@
     .animate-page-enter,
     .chart-last-dot,
     .schema-flow,
+    .schema-flow-fast,
     .schema-tank-wave,
     .schema-tank-wave-2,
-    .schema-lora {
+    .schema-lora,
+    .schema-node-breath,
+    .shimmer-text {
       animation: none !important;
     }
   }

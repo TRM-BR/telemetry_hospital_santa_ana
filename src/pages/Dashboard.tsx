@@ -62,7 +62,7 @@ const Dashboard = () => {
             <span className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">Powered by</span>
             <span className="inline-flex items-center gap-1 font-display text-sm text-primary">
               <Droplets className="h-3.5 w-3.5" />
-              Verth
+              Vector
             </span>
           </div>
         </div>

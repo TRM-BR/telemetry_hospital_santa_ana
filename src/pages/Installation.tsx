@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 
 import {
-  installations, tankGroups, buildInstallationMetrics,
+  installations, tankGroups, buildDashboardSnapshot, buildInstallationMetrics,
 } from '../mocks/hospitalSantaAnaMock';
 import LiquidHero from '../components/installation/LiquidHero';
 import StatusRing from '../components/installation/StatusRing';
@@ -32,6 +32,7 @@ const Installation = () => {
     [id],
   );
 
+  const snapshot = useMemo(() => buildDashboardSnapshot('24h'), []);
   const metrics = useMemo(() => buildInstallationMetrics(), []);
   const consumoAnimated = useCountUp(metrics.consumoHoje, 1300);
   const variacaoPositiva = metrics.variacaoPct >= 0;
@@ -151,7 +152,14 @@ const Installation = () => {
         </LiquidHero>
 
         {/* ── Esquema hidráulico ───────────────────────── */}
-        <HospitalHydraulicScheme tankGroups={tankGroups} vazao={metrics.vazao} />
+        <HospitalHydraulicScheme
+          tankGroups={tankGroups}
+          vazao={metrics.vazao}
+          vazao1={snapshot.vazao1}
+          vazao2={snapshot.vazao2}
+          pressao1={snapshot.pressao1}
+          pressao2={snapshot.pressao2}
+        />
 
         {/* ── Métricas em tempo real ───────────────────── */}
         <section>

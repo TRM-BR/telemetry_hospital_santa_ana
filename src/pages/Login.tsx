@@ -166,7 +166,7 @@ const Login = () => {
               </span>
               <span className="inline-flex items-center gap-1 font-display text-base text-primary">
                 <Droplets className="h-4 w-4" />
-                Verth
+                Vector
               </span>
             </div>
           </div>
