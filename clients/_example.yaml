@@ -1,0 +1,69 @@
+# =====================================================================
+# clients/_example.yaml — Exemplo preenchido (Barueri, prod)
+#
+# Copie este arquivo para clients/<slug>.yaml e ajuste para a nova
+# prefeitura. Segredos ficam em .env.<slug>, não aqui.
+# =====================================================================
+
+slug: barueri
+display_name: Prefeitura de Barueri
+domain: telemetria.barueri.gov.br
+timezone: America/Sao_Paulo
+
+branding:
+  primary_color: "#0B5394"
+  secondary_color: "#F4B400"
+  app_title: Telemetria Barueri
+  logo_path: assets/clients/barueri/logo.svg
+  favicon_path: assets/clients/barueri/favicon.ico
+
+database:
+  host: 10.0.0.3
+  port: 5432
+  name: telemetry_barueri_prod
+  user: telemetry_app
+  pool_size: 5
+  pool_max_overflow: 2
+
+mqtt:
+  host: mqtt.trmbrasil.cloud
+  port: 8883
+  tls: true
+  ca_cert_path: /etc/telemetry/certs/ca.crt
+  username: telemetry_barueri_bridge
+  client_id: telemetry-bridge-barueri
+  keepalive: 30
+  topic_prefix: telemetry/barueri
+
+workers:
+  batch_size: 50
+  idle_seconds: 5
+  stuck_threshold_seconds: 300
+  max_attempts: 5
+  backoff_schedule_seconds: [60, 300, 900, 3600, 21600]
+
+retention:
+  raw_messages_days: 90
+  parsed_measurements_days: 730
+  derived_metrics_days: 1825
+  alert_events_days: 1825
+  auth_logs_days: 180
+
+alert_defaults:
+  level_critical_pct: 25
+  level_warning_pct: 60
+  pressure_low_mca: 12
+  pressure_high_mca: 45
+  flow_no_signal_lph: 1
+  flow_low_lph: 120
+  flow_high_lph: 1500
+  telemetry_stale_minutes: 120
+  reservoir_default_volume_m3: 30
+  autonomy_critical_hours: 24
+  autonomy_warning_hours: 72
+  leak_danger_ratio: 1.7
+  leak_warning_ratio: 1.3
+  low_consumption_ratio: 0.4
+
+admin:
+  email: admin@barueri.gov.br
