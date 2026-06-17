@@ -1,0 +1,93 @@
+# clients/santana_parnaiba.yaml — Hospital Santa Ana, Santana do Parnaíba
+# Segredos NUNCA aqui — vão em .env.santana_parnaiba
+
+slug: santana_parnaiba
+display_name: "Santana do Parnaíba"
+domain: telemetria.santanaparnaiba.sp.gov.br
+timezone: America/Sao_Paulo
+
+branding:
+  primary_color: "#1A5276"
+  secondary_color: "#F39C12"
+  app_title: "Telemetria Hospital Santa Ana"
+  logo_path: assets/clients/santana_parnaiba/logo.svg
+  favicon_path: assets/clients/santana_parnaiba/favicon.ico
+
+database:
+  host: localhost
+  port: 5432
+  name: telemetry_santana_parnaiba_prod
+  user: telemetry_app
+  pool_size: 5
+  pool_max_overflow: 2
+  # password: TELEMETRY_DB_PASSWORD em .env.santana_parnaiba
+
+mqtt:
+  host: localhost
+  port: 8883
+  tls: true
+  ca_cert_path: /etc/telemetry/certs/ca.crt
+  username: telemetry_santana_parnaiba_bridge
+  client_id: telemetry-bridge-santana_parnaiba
+  keepalive: 30
+  # Tópicos que a bridge ASSINA (telemetria). CMD é outbound — nunca aqui.
+  telemetry_topics:
+    - "SN50_analog/data"
+  command_topic_template: "SN50_analog/{imei}/CMD"
+  # password: TELEMETRY_MQTT_PASSWORD em .env.santana_parnaiba
+
+workers:
+  batch_size: 50
+  idle_seconds: 5
+  stuck_threshold_seconds: 300
+  max_attempts: 5
+  backoff_schedule_seconds: [60, 300, 900, 3600, 21600]
+
+# Instalação principal deste tenant
+installation:
+  slug: hospital_santa_ana
+  name: "Hospital Santa Ana"
+
+# Autodetecção de devices analógicos
+# Device criado automaticamente no 1º payload válido (Model DTN*, IMEI >= 10 dígitos).
+device_autodetect:
+  enabled: true
+  attach_installation_slug: hospital_santa_ana
+  default_status: auto_detected
+  label_template: "Remota {imei_suffix}"   # imei_suffix = últimos 4 dígitos do IMEI
+
+# Perfis analógicos por modelo de device.
+# Não é lista fechada de IMEIs — qualquer DTN-200-FPS0 herda este perfil.
+analog_profiles:
+  DTN-200-FPS0:
+    channel: idc_intput            # nome do campo no payload (aceita também idc_input)
+    current_min_ma: 4.0            # corrente mínima válida (sensor ok)
+    current_max_ma: 20.0           # corrente máxima válida (sensor ok)
+    level_min_m: 0.0               # nível correspondente a 4 mA
+    level_max_m: 6.0               # nível correspondente a 20 mA
+    tank_height_m: 6.0             # altura útil do reservatório
+    fault_below_ma: 4.0            # abaixo → undercurrent (cabo/sensor)
+    fault_above_ma: 20.5           # acima → overrange (saturação)
+    fault_sustained_minutes: 10    # janela mínima para confirmar falha de sensor
+    clear_above_ma: 4.1            # histerese para limpar alerta undercurrent
+
+retention:
+  raw_messages_days: 90
+  parsed_measurements_days: 730
+  derived_metrics_days: 1825
+  alert_events_days: 1825
+  auth_logs_days: 180
+
+alert_defaults:
+  level_critical_pct: 25
+  level_warning_pct: 60
+  telemetry_stale_minutes: 120
+  # Pressão/vazão desabilitados por capability — estes valores não são usados
+  # mas mantidos para compatibilidade com o schema de alertas herdado.
+  street_pressure_moderado_mca: 15
+  street_pressure_alto_mca: 10
+  street_pressure_critico_mca: 5
+
+admin:
+  email: admin@santanaparnaiba.sp.gov.br
+  # password: TELEMETRY_ADMIN_INITIAL_PASSWORD em .env.santana_parnaiba
