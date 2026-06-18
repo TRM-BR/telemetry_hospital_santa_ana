@@ -1,4 +1,4 @@
-import { AlertCircle, AlertTriangle, Check, ChevronRight, CloudRain, Info, Radar } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Check, ChevronRight, CloudRain, Radar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import HistoryChart from '../components/dashboard/HistoryChart';
