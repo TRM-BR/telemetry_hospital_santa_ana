@@ -190,8 +190,8 @@ const Dashboard = () => {
         {/* Linha 1 — Gauge de nível por remota */}
         {devices.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
-            {devices.map((d) => (
-              <LevelGaugeCard key={d.device_id} device={d} />
+            {devices.map((d, i) => (
+              <LevelGaugeCard key={d.device_id} device={d} groupIndex={i} />
             ))}
           </div>
         )}

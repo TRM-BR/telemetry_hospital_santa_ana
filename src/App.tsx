@@ -8,6 +8,7 @@ import Installation from './pages/Installation';
 import Dashboard from './pages/Dashboard';
 import Alerts from './pages/Alerts';
 import Remotas from './pages/Remotas';
+import WeatherDashboard from './pages/WeatherDashboard';
 import NotFound from './pages/NotFound';
 import { AppSidebar, AppSidebarProvider, useAppSidebar } from './components/AppSidebar';
 
@@ -63,6 +64,14 @@ function AppContent() {
             element={
               <RequireAuth>
                 <Alerts />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/meteorologia"
+            element={
+              <RequireAuth>
+                <WeatherDashboard />
               </RequireAuth>
             }
           />
