@@ -42,17 +42,22 @@ def upgrade() -> None:
     conn.execute(
         sa.text("""
             INSERT INTO installations (
-                slug, name, city, state, country, is_active, created_at
+                slug, name, group_name, notes, is_active, created_at, updated_at
             ) VALUES (
                 'hospital_santa_ana',
                 'Hospital Santa Ana',
                 'Santana do Parnaíba',
-                'SP',
-                'BR',
+                'Hospital Santa Ana - Santana do Parnaíba/SP',
                 true,
+                now(),
                 now()
             )
-            ON CONFLICT (slug) DO NOTHING
+            ON CONFLICT (slug) DO UPDATE SET
+                name = EXCLUDED.name,
+                group_name = EXCLUDED.group_name,
+                notes = EXCLUDED.notes,
+                is_active = EXCLUDED.is_active,
+                updated_at = now()
         """)
     )
 

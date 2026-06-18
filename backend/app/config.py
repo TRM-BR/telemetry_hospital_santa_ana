@@ -38,18 +38,24 @@ def _find_repo_root() -> Path:
 
 
 def _load_client_yaml(slug: str) -> dict:
-    """Carrega clients/<slug>.yaml relativo à raiz do repo."""
-    root = _find_repo_root()
-    candidate = root / "clients" / f"{slug}.yaml"
-    if not candidate.exists():
-        return {}
-    with candidate.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    """Carrega clients/<slug>.yaml relativo à raiz do app/repo."""
+    here = Path(__file__).resolve()
 
+    candidates = [
+        # Layout Docker: /app/app/config.py -> /app/clients/<slug>.yaml
+        here.parents[1] / "clients" / f"{slug}.yaml",
+        # Fallback para execuções locais a partir da raiz do projeto/backend
+        Path.cwd() / "clients" / f"{slug}.yaml",
+        Path.cwd() / "backend" / "clients" / f"{slug}.yaml",
+    ]
 
-# ---------------------------------------------------------------------------
-# Settings
-# ---------------------------------------------------------------------------
+    for candidate in candidates:
+        if candidate.exists():
+            with candidate.open("r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+
+    return {}
+
 
 class Settings(BaseSettings):
     """
