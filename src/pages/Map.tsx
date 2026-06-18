@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  LogOut, Map as MapIcon, Activity, List as ListIcon, Crosshair, Satellite, Droplets,
+  LogOut, Map as MapIcon, Activity, List as ListIcon, Droplets,
 } from 'lucide-react';
-import InstallationMap, { type InstallationMapHandle } from '../components/InstallationMap';
-import { installations, santanaBounds } from '../mocks/hospitalSantaAnaMock';
+import { installations } from '../mocks/hospitalSantaAnaMock';
 import { getUsername, logout } from '../services/auth';
 import { cn } from '../lib/cn';
 import type { InstallationStatus } from '../types/telemetry';
@@ -21,16 +20,7 @@ const MapPage = () => {
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [filter, setFilter] = useState<InstallationStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
-  const [mapStyle, setMapStyle] = useState<'minimalist' | 'satellite'>('minimalist');
   const username = getUsername();
-  const mapRef = useRef<InstallationMapHandle>(null);
-
-  useEffect(() => {
-    mapRef.current?.fitBounds([
-      [santanaBounds.south, santanaBounds.west],
-      [santanaBounds.north, santanaBounds.east],
-    ]);
-  }, []);
 
   const filtered = useMemo(
     () => (filter === 'all' ? installations : installations.filter((i) => i.status === filter)),
@@ -182,23 +172,10 @@ const MapPage = () => {
       <section className="relative h-full overflow-hidden bg-secondary">
         {viewMode === 'map' ? (
           <>
-            <InstallationMap
-              ref={mapRef}
-              markers={filtered.map((i) => ({
-                id: i.id,
-                lat: i.lat,
-                lng: i.lng,
-                label: i.name,
-                status: i.status,
-              }))}
-              selectedId={selectedId}
-              onMarkerClick={(id) => {
-                setSelectedId(id);
-                navigate(`/instalacao/${id}`);
-              }}
-              onBackgroundClick={() => setSelectedId(undefined)}
-              mapStyle={mapStyle}
-              className="!rounded-none !border-0 !shadow-none h-full"
+            <img
+              src="/guaratingueta-map.png"
+              alt="Mapa Guaratinguetá"
+              className="h-full w-full object-cover"
             />
 
             {/* Overlay top */}
@@ -206,21 +183,11 @@ const MapPage = () => {
               <div className="pointer-events-auto flex items-center gap-3">
                 <div className="inline-flex items-center gap-2 rounded-full bg-card/90 backdrop-blur px-4 py-2 shadow-soft border border-border">
                   <MapIcon className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-semibold text-foreground">Santana de Parnaíba, SP</span>
+                  <span className="text-sm font-semibold text-foreground">Guaratinguetá, SP</span>
                 </div>
               </div>
 
               <div className="pointer-events-auto flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setMapStyle((s) => (s === 'minimalist' ? 'satellite' : 'minimalist'))}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-card/90 backdrop-blur px-3.5 py-2 shadow-soft border border-border text-xs font-medium text-muted-foreground hover:text-foreground transition-smooth"
-                  title={mapStyle === 'minimalist' ? 'Satélite' : 'Mapa'}
-                >
-                  <Satellite className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">{mapStyle === 'minimalist' ? 'Satélite' : 'Mapa'}</span>
-                </button>
-
                 <div className="hidden sm:flex items-center gap-5 rounded-full bg-card/90 backdrop-blur px-5 py-2 shadow-soft border border-border">
                   <div className="flex items-baseline gap-1.5">
                     <span className="text-sm font-bold text-foreground tabular-nums">{counts.total}</span>
@@ -236,22 +203,7 @@ const MapPage = () => {
             </div>
 
             {/* Overlay bottom */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 p-5 flex items-end justify-between gap-4 z-[1000]">
-              <div className="pointer-events-auto">
-                <button
-                  type="button"
-                  onClick={() =>
-                    mapRef.current?.fitBounds([
-                      [santanaBounds.south, santanaBounds.west],
-                      [santanaBounds.north, santanaBounds.east],
-                    ])
-                  }
-                  className="inline-flex items-center justify-center rounded-full bg-card/90 backdrop-blur h-10 w-10 shadow-soft border border-border text-muted-foreground hover:text-foreground transition-smooth"
-                  title="Centralizar mapa"
-                >
-                  <Crosshair className="h-4 w-4" />
-                </button>
-              </div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 p-5 flex items-end justify-end gap-4 z-[1000]">
               <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-card/95 backdrop-blur px-4 py-2 shadow-soft border border-border">
                 <Activity className="h-3.5 w-3.5 text-primary" />
                 <span className="text-[11px] text-muted-foreground">tempo real</span>
