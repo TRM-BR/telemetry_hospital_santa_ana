@@ -65,7 +65,6 @@ analog_profiles:
     current_max_ma: 20.0           # corrente máxima válida (sensor ok)
     level_min_m: 0.0               # nível correspondente a 4 mA
     level_max_m: 6.0               # nível correspondente a 20 mA
-    tank_height_m: 6.0             # altura útil do reservatório
     fault_below_ma: 4.0            # abaixo → undercurrent (cabo/sensor)
     fault_above_ma: 20.5           # acima → overrange (saturação)
     fault_sustained_minutes: 10    # janela mínima para confirmar falha de sensor
