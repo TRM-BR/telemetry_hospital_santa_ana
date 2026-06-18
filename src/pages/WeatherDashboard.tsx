@@ -232,10 +232,10 @@ const WeatherDashboard = () => {
 
           <div className="hidden sm:flex items-center gap-2">
             <span className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">Status</span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground">
+            {/* <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground">
               <Info className="h-3.5 w-3.5 text-primary" />
               Dados mockados
-            </span>
+            </span> */}
           </div>
         </div>
       </header>
@@ -343,7 +343,7 @@ const WeatherDashboard = () => {
         </div>
 
         <p className="text-[11px] text-muted-foreground">
-          Janela 24h - dados mockados - atualizado com sucesso -{' '}
+          Janela 24h - atualizado com sucesso -{' '}
           <span className="tabular-nums">
             {weatherSnapshot.updatedAt.toLocaleTimeString('pt-BR')}
           </span>
