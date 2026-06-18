@@ -244,7 +244,7 @@ const WeatherDashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <WeatherAlertsCard delayMs={0} />
           <HistoryChart
-            title="Historico de Nivel do Rio"
+            title="Historico de Nivel do Córrego Santana"
             unit="m"
             windowKey="24h"
             yDomain="smart"
