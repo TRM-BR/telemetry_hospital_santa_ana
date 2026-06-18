@@ -223,9 +223,9 @@ const WeatherDashboard = () => {
           <div className="flex items-center gap-3 text-primary">
             <CloudRain className="h-6 w-6" />
             <div className="leading-tight">
-              <p className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
+              {/* <p className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
                 Hospital Santa Ana
-              </p>
+              </p> */}
               <p className="mt-0.5 text-2xl font-bold text-foreground">Dashboard meteorologico</p>
             </div>
           </div>
