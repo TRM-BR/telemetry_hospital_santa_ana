@@ -6,7 +6,6 @@ import FiltersBar from '../components/dashboard/FiltersBar';
 import HistoryChart, { type ChartSeries } from '../components/dashboard/HistoryChart';
 import { LevelGaugeCard } from '../components/dashboard/LevelGaugeCard';
 import { WINDOW_TO_HOURS, DEVICE_COLORS } from '../constants/dashboard';
-import { deviceLabel } from '../components/dashboard/DeviceCard';
 import type {
   WindowKey,
   FilterMode,
@@ -14,11 +13,13 @@ import type {
   InstallationDashboardResponse,
 } from '../types/telemetry';
 
+function groupLabel(i: number) { return `Grupo ${i + 1}`; }
+
 function buildSeries(devices: DashDevice[], metric: string): ChartSeries[] {
   return devices
     .map((d, i) => ({
       key: `dev_${d.device_id}`,
-      label: deviceLabel(d),
+      label: groupLabel(i),
       color: DEVICE_COLORS[i % DEVICE_COLORS.length],
       data: d.series?.[metric] ?? [],
     }))
@@ -30,7 +31,7 @@ function buildSeriesForDevice(device: DashDevice, metric: string, idx: number): 
   if (data.length === 0) return [];
   return [{
     key: `dev_${device.device_id}`,
-    label: deviceLabel(device),
+    label: groupLabel(idx),
     color: DEVICE_COLORS[idx % DEVICE_COLORS.length],
     data,
   }];
@@ -205,7 +206,7 @@ const Dashboard = () => {
               return (
                 <HistoryChart
                   key={d.device_id}
-                  title={`Histórico de Nível (%) — ${deviceLabel(d)}`}
+                  title={`Histórico de Nível (%) — ${groupLabel(i)}`}
                   unit="%"
                   windowKey={windowKey}
                   yDomain={[0, 100]}
