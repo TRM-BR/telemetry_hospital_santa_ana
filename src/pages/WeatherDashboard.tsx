@@ -7,7 +7,7 @@ import type { SeriesPoint } from '../types/telemetry';
 
 const BASE_TIME = new Date('2026-06-17T15:00:00-03:00').getTime();
 const HOUR_MS = 60 * 60 * 1000;
-const CHART_HEIGHT_CLASS = 'h-[300px]';
+const CHART_HEIGHT_CLASS = 'h-[280px]';
 
 function series(values: number[]): SeriesPoint[] {
   return values.map((v, index) => ({
@@ -203,7 +203,7 @@ function RadarCard() {
       <img
         src="/guaratingueta-map.png"
         alt="Radar Guaratinguetá"
-        className="h-[50vh] min-h-[360px] w-full object-cover"
+        className="h-[40vh] min-h-[280px] w-full object-cover"
       />
     </section>
   );
@@ -214,7 +214,7 @@ const WeatherDashboard = () => {
     <div className="min-h-screen w-full bg-secondary">
       <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 sm:px-8 min-h-[104px]">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <img
               src="/guaratingueta-coat.png"
               alt="Brasão"
