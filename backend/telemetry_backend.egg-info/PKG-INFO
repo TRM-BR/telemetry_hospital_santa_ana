@@ -11,6 +11,7 @@ Requires-Dist: alembic>=1.13
 Requires-Dist: pydantic>=2.7
 Requires-Dist: pydantic-settings>=2.2
 Requires-Dist: pyyaml>=6.0
+Requires-Dist: tzdata>=2026.2
 Requires-Dist: structlog>=24.0
 Requires-Dist: paho-mqtt>=2.1.0
 Requires-Dist: fastapi>=0.111

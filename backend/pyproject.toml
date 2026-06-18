@@ -14,6 +14,7 @@ dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.2",
     "pyyaml>=6.0",
+    "tzdata>=2026.2",
     "structlog>=24.0",
     # Fase 5 — bridge
     "paho-mqtt>=2.1.0",

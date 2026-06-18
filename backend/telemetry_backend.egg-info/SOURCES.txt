@@ -6,6 +6,7 @@ app/main.py
 app/alerts/__init__.py
 app/alerts/behavior.py
 app/alerts/capabilities.py
+app/alerts/device_capabilities.py
 app/alerts/rendering.py
 app/alerts/severity.py
 app/alerts/signals.py
@@ -90,6 +91,7 @@ app/services/telegram_link_service.py
 app/services/telegram_message_formatter.py
 app/services/user_approval_service.py
 app/tests/__init__.py
+app/tests/test_app_import.py
 app/tests/test_alerts/__init__.py
 app/tests/test_alerts/test_severity.py
 app/tests/test_alerts/test_signals.py
@@ -107,6 +109,7 @@ app/workers/__init__.py
 app/workers/_runner.py
 app/workers/alert_trigger.py
 app/workers/alert_worker.py
+app/workers/analog_alert_worker.py
 app/workers/baseline_worker.py
 app/workers/behavior_baseline_worker.py
 app/workers/calibration_worker.py
