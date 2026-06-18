@@ -1,30 +1,44 @@
-import { AlertTriangle, CloudRain, Droplets, Gauge, Radar, Thermometer } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { AlertCircle, AlertTriangle, Check, ChevronRight, CloudRain, Info, Radar } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
+import HistoryChart from '../components/dashboard/HistoryChart';
 import { cn } from '../lib/cn';
+import type { SeriesPoint } from '../types/telemetry';
 
 const RAIN_VIEWER_SRC =
   'https://www.rainviewer.com/map.html?loc=-23.5373,-46.7453,10.030099623626088&oC=true&oCS=1&c=9&o=83&lm=1&layer=radar&sm=1&sn=1';
 
-const rainSeries = [
-  { hour: '08:00', mmh: 0.6 },
-  { hour: '09:00', mmh: 1.4 },
-  { hour: '10:00', mmh: 3.8 },
-  { hour: '11:00', mmh: 7.2 },
-  { hour: '12:00', mmh: 12.6 },
-  { hour: '13:00', mmh: 9.3 },
-  { hour: '14:00', mmh: 5.1 },
-  { hour: '15:00', mmh: 2.4 },
-];
+const BASE_TIME = new Date('2026-06-17T15:00:00-03:00').getTime();
+const HOUR_MS = 60 * 60 * 1000;
+const CHART_HEIGHT_CLASS = 'h-[300px]';
+
+function series(values: number[]): SeriesPoint[] {
+  return values.map((v, index) => ({
+    t: BASE_TIME + index * HOUR_MS,
+    v,
+  }));
+}
+
+const riverLevelSeries = series([
+  2.18, 2.17, 2.19, 2.2, 2.22, 2.25, 2.27, 2.26,
+  2.28, 2.31, 2.34, 2.4, 2.49, 2.61, 2.72, 2.84,
+  2.9, 2.87, 2.81, 2.76, 2.73, 2.75, 2.79, 2.84,
+]);
+const rainSeries = series([
+  0, 0.2, 0, 0, 0.4, 1.1, 0.6, 0,
+  0, 0.2, 1.8, 4.6, 8.9, 13.2, 10.8, 6.4,
+  3.1, 1.2, 0.4, 0, 0, 0.3, 1.5, 2.2,
+]);
+const temperatureSeries = series([
+  24.6, 24.1, 23.5, 22.8, 22.2, 21.7, 21.4, 21.1,
+  20.9, 21.3, 22.4, 23.5, 24.2, 24.8, 24.4, 23.7,
+  23.1, 22.6, 22.3, 22, 21.8, 22.1, 22.8, 23.7,
+]);
+const humiditySeries = series([
+  72, 74, 76, 78, 80, 82, 83, 85,
+  86, 84, 81, 79, 82, 88, 91, 89,
+  86, 84, 82, 80, 79, 80, 81, 82,
+]);
 
 const weatherSnapshot = {
   riverLevelM: 2.84,
@@ -33,122 +47,158 @@ const weatherSnapshot = {
   humidityPct: 82,
   rainNowMmh: 12.6,
   alertAboveNormalPct: 18,
-  updatedAt: '18/06/2026 14:35',
+  updatedAt: new Date('2026-06-18T14:35:00-03:00'),
 };
 
-type Tone = 'primary' | 'info' | 'warning' | 'danger';
+type WeatherAlertSeverity = 'moderado' | 'alto' | 'critico';
 
-const toneClass: Record<Tone, { icon: string; bar: string; border: string }> = {
-  primary: {
-    icon: 'bg-primary/10 text-primary',
-    bar: 'bg-primary',
-    border: 'border-primary/20',
-  },
-  info: {
-    icon: 'bg-sky-100 text-sky-700',
-    bar: 'bg-sky-600',
-    border: 'border-sky-200',
-  },
-  warning: {
-    icon: 'bg-accent/20 text-accent-foreground',
-    bar: 'bg-accent',
-    border: 'border-accent/40',
-  },
-  danger: {
-    icon: 'bg-destructive/10 text-destructive',
-    bar: 'bg-destructive',
-    border: 'border-destructive/30',
-  },
-};
-
-interface MetricCardProps {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  helper: string;
-  tone?: Tone;
-  progress?: number;
+interface WeatherAlert {
+  id: string;
+  title: string;
+  description: string;
+  severity: WeatherAlertSeverity;
+  date: Date;
+  viewed?: boolean;
 }
 
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  helper,
-  tone = 'primary',
-  progress,
-}: MetricCardProps) {
-  const styles = toneClass[tone];
-  const safeProgress = progress === undefined ? undefined : Math.max(0, Math.min(100, progress));
+const weatherAlerts: WeatherAlert[] = [
+  {
+    id: 'MET-001',
+    title: 'Nivel do rio acima do normal',
+    description: `Rio ${weatherSnapshot.alertAboveNormalPct}% acima da referencia operacional.`,
+    severity: 'alto',
+    date: new Date('2026-06-18T14:35:00-03:00'),
+  },
+  {
+    id: 'MET-002',
+    title: 'Chuva moderada nas proximidades',
+    description: 'Intensidade atual exige acompanhamento do acumulado horario.',
+    severity: 'moderado',
+    date: new Date('2026-06-18T13:10:00-03:00'),
+    viewed: true,
+  },
+];
 
-  return (
-    <article className={cn('rounded-2xl border bg-card p-5 shadow-soft', styles.border)}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
-          <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{value}</p>
-        </div>
-        <div className={cn('rounded-xl p-2.5', styles.icon)}>
-          <Icon className="h-5 w-5" />
-        </div>
-      </div>
-
-      <p className="mt-3 min-h-10 text-sm leading-5 text-muted-foreground">{helper}</p>
-
-      {safeProgress !== undefined && (
-        <div className="mt-4 h-2 rounded-full bg-secondary">
-          <div
-            className={cn('h-full rounded-full', styles.bar)}
-            style={{ width: `${safeProgress}%` }}
-          />
-        </div>
-      )}
-    </article>
-  );
+function formatOccurrence(date: Date): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
 
-function AlertCard() {
+function severityIcon(severity: WeatherAlertSeverity) {
+  if (severity === 'critico') return AlertCircle;
+  if (severity === 'alto') return AlertCircle;
+  return AlertTriangle;
+}
+
+function severityBorderColor(severity: WeatherAlertSeverity): string {
+  if (severity === 'critico') return 'border-l-red-600';
+  if (severity === 'alto') return 'border-l-red-400';
+  return 'border-l-orange-400';
+}
+
+function severityIconColor(severity: WeatherAlertSeverity): string {
+  if (severity === 'critico') return 'text-red-600';
+  if (severity === 'alto') return 'text-red-400';
+  return 'text-orange-500';
+}
+
+function severityBgTint(severity: WeatherAlertSeverity): string {
+  if (severity === 'critico') return 'bg-red-600/10';
+  if (severity === 'alto') return 'bg-red-400/10';
+  return 'bg-orange-500/10';
+}
+
+function WeatherAlertsCard({ delayMs = 0 }: { delayMs?: number }) {
+  const navigate = useNavigate();
+
   return (
-    <article className="rounded-2xl border border-destructive/30 bg-card p-5 shadow-soft md:col-span-2 xl:col-span-2">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Alertas</p>
-          <h2 className="mt-2 text-xl font-semibold text-foreground">Nivel do rio em atencao</h2>
+    <div
+      className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in flex flex-col"
+      style={{ animationDelay: `${delayMs}ms` }}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-foreground">Avisos</h3>
+          {weatherAlerts.length > 0 && (
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+              {weatherAlerts.length}
+            </span>
+          )}
         </div>
-        <div className="rounded-xl bg-destructive/10 p-2.5 text-destructive">
-          <AlertTriangle className="h-5 w-5" />
-        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/alertas')}
+          className="flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Ver todos
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        Nivel do rio {weatherSnapshot.alertAboveNormalPct}% acima da normalidade. Monitorar pontos
-        de acesso ao hospital e manter equipe de manutencao em prontidao.
-      </p>
+      <div className="space-y-2.5 max-h-[280px] overflow-y-auto">
+        {weatherAlerts.map((alert) => {
+          const Icon = severityIcon(alert.severity);
+          return (
+            <div
+              key={alert.id}
+              className={cn(
+                'flex items-start gap-3 rounded-xl px-4 py-3 border-l-[3px] hover:opacity-90 transition-opacity',
+                severityBgTint(alert.severity),
+                severityBorderColor(alert.severity),
+                alert.viewed && 'opacity-80',
+              )}
+            >
+              <Icon className={cn('mt-0.5 h-[18px] w-[18px] flex-shrink-0', severityIconColor(alert.severity))} />
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        <span className="rounded-full border border-destructive/30 bg-destructive/10 px-3 py-1 text-xs font-semibold text-destructive">
-          Prioridade media
-        </span>
-        <span className="rounded-full border border-border bg-secondary/70 px-3 py-1 text-xs font-medium text-muted-foreground">
-          Atualizado {weatherSnapshot.updatedAt}
-        </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground leading-tight line-clamp-2">
+                  {alert.title}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                  {alert.description}
+                </p>
+                <p className="text-[11px] text-muted-foreground/70 mt-1 tabular-nums">
+                  {formatOccurrence(alert.date)}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                title={alert.viewed ? 'Marcado como visto' : 'Marcar como visto'}
+                className={cn(
+                  'flex-shrink-0 h-6 w-6 rounded-full flex items-center justify-center transition-all',
+                  alert.viewed
+                    ? 'bg-emerald-500 text-white shadow-sm'
+                    : 'text-foreground/30 hover:text-foreground/60 hover:bg-muted/60',
+                )}
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        })}
       </div>
-    </article>
+    </div>
   );
 }
 
 function RadarCard() {
   return (
-    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
+    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft animate-drop-in">
       <div className="flex flex-col gap-3 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
             Radar de chuva
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-foreground">Monitoramento meteorologico</h1>
+          <h1 className="mt-1 text-lg font-semibold text-foreground">Monitoramento meteorologico</h1>
         </div>
-        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary">
-          <Radar className="h-3.5 w-3.5" />
+        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground tabular-nums">
+          <Radar className="h-3.5 w-3.5 text-primary" />
           Ao vivo
         </div>
       </div>
@@ -165,119 +215,138 @@ function RadarCard() {
   );
 }
 
-function RainChartCard() {
-  return (
-    <article className="rounded-2xl border border-sky-200 bg-card p-5 shadow-soft md:col-span-2 xl:col-span-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Chuva</p>
-          <h2 className="mt-1 text-lg font-semibold text-foreground">Intensidade em mm/h</h2>
-        </div>
-        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-          <CloudRain className="h-3.5 w-3.5" />
-          {weatherSnapshot.rainNowMmh.toFixed(1)} mm/h agora
-        </div>
-      </div>
-
-      <div className="mt-5 h-[230px] w-full">
-        <ResponsiveContainer>
-          <BarChart data={rainSeries} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
-            <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 4" vertical={false} />
-            <XAxis
-              dataKey="hour"
-              stroke="hsl(var(--muted-foreground))"
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              stroke="hsl(var(--muted-foreground))"
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-              width={44}
-              tickFormatter={(value: number) => `${value}`}
-            />
-            <Tooltip
-              cursor={{ fill: 'hsl(var(--secondary))' }}
-              contentStyle={{
-                background: 'hsl(var(--card))',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: 10,
-                boxShadow: 'var(--shadow-soft)',
-                fontSize: 12,
-              }}
-              formatter={(value) => [`${Number(value).toFixed(1)} mm/h`, 'Chuva']}
-            />
-            <Bar dataKey="mmh" radius={[8, 8, 0, 0]} fill="hsl(200 85% 45%)" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    </article>
-  );
-}
-
 const WeatherDashboard = () => {
-  const riverProgress = (weatherSnapshot.riverLevelM / 4) * 100;
-
   return (
     <div className="min-h-screen w-full bg-secondary">
       <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 sm:px-8">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 sm:px-8 min-h-[104px]">
           <div className="flex items-center gap-3 text-primary">
-            <CloudRain className="h-5 w-5" />
+            <CloudRain className="h-6 w-6" />
             <div className="leading-tight">
               <p className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
                 Hospital Santa Ana
               </p>
-              <p className="text-[12px] font-semibold text-foreground">Dashboard de clima</p>
+              <p className="mt-0.5 text-2xl font-bold text-foreground">Dashboard meteorologico</p>
             </div>
           </div>
 
-          <span className="hidden rounded-full border border-border bg-secondary/70 px-3 py-1.5 text-xs font-medium text-muted-foreground sm:inline-flex">
-            Dados mockados
-          </span>
+          <div className="hidden sm:flex items-center gap-2">
+            <span className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">Status</span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground">
+              <Info className="h-3.5 w-3.5 text-primary" />
+              Dados mockados
+            </span>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-8 sm:py-8">
         <RadarCard />
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <AlertCard />
-
-          <MetricCard
-            icon={Gauge}
-            label="Nivel do rio"
-            value={`${weatherSnapshot.riverLevelM.toFixed(2)} m`}
-            helper={`Referencia normal ate ${weatherSnapshot.riverNormalM.toFixed(2)} m.`}
-            tone="danger"
-            progress={riverProgress}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <WeatherAlertsCard delayMs={0} />
+          <HistoryChart
+            title="Historico de Nivel do Rio"
+            unit="m"
+            windowKey="24h"
+            yDomain="smart"
+            chartHeightClass={CHART_HEIGHT_CLASS}
+            yAxisWidth={52}
+            badges={[
+              { label: 'Nivel', value: `${weatherSnapshot.riverLevelM.toFixed(2)} m` },
+            ]}
+            referenceLines={[
+              {
+                value: weatherSnapshot.riverNormalM,
+                label: 'Normal',
+                color: 'hsl(var(--accent))',
+              },
+            ]}
+            series={[
+              {
+                key: 'river',
+                label: 'Nivel',
+                color: 'var(--primary)',
+                data: riverLevelSeries,
+              },
+            ]}
+            delayMs={80}
           />
+        </div>
 
-          <MetricCard
-            icon={Thermometer}
-            label="Temperatura"
-            value={`${weatherSnapshot.temperatureC.toFixed(1)}\u00b0C`}
-            helper="Leitura ambiente proxima ao hospital."
-            tone="warning"
-            progress={weatherSnapshot.temperatureC * 2.2}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <HistoryChart
+            title="Historico de Chuva"
+            unit="mm/h"
+            windowKey="24h"
+            yDomain={[0, 'auto']}
+            lineType="monotone"
+            chartHeightClass={CHART_HEIGHT_CLASS}
+            yAxisWidth={52}
+            tooltipNote="intensidade de chuva por hora"
+            badges={[
+              { label: 'Chuva', value: `${weatherSnapshot.rainNowMmh.toFixed(2)} mm/h` },
+            ]}
+            series={[
+              {
+                key: 'rain',
+                label: 'Chuva',
+                color: 'var(--primary)',
+                data: rainSeries,
+              },
+            ]}
+            delayMs={160}
           />
-
-          <RainChartCard />
-
-          <MetricCard
-            icon={Droplets}
-            label="Umidade"
-            value={`${weatherSnapshot.humidityPct}%`}
-            helper="Umidade relativa do ar na ultima leitura."
-            tone="info"
-            progress={weatherSnapshot.humidityPct}
+          <HistoryChart
+            title="Historico de Temperatura"
+            unit="C"
+            windowKey="24h"
+            yDomain="smart"
+            chartHeightClass={CHART_HEIGHT_CLASS}
+            yAxisWidth={52}
+            badges={[
+              { label: 'Temperatura', value: `${weatherSnapshot.temperatureC.toFixed(1)} C` },
+            ]}
+            series={[
+              {
+                key: 'temperature',
+                label: 'Temperatura',
+                color: 'var(--primary)',
+                data: temperatureSeries,
+              },
+            ]}
+            delayMs={240}
           />
-        </section>
+        </div>
 
-        <p className="px-1 text-[11px] text-muted-foreground">
-          Atualizado {weatherSnapshot.updatedAt} - leituras simuladas para validacao visual.
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <HistoryChart
+            title="Historico de Umidade"
+            unit="%"
+            windowKey="24h"
+            yDomain={[0, 100]}
+            chartHeightClass={CHART_HEIGHT_CLASS}
+            yAxisWidth={52}
+            badges={[
+              { label: 'Umidade', value: `${weatherSnapshot.humidityPct}%` },
+            ]}
+            series={[
+              {
+                key: 'humidity',
+                label: 'Umidade',
+                color: 'var(--primary)',
+                data: humiditySeries,
+              },
+            ]}
+            delayMs={320}
+          />
+        </div>
+
+        <p className="text-[11px] text-muted-foreground">
+          Janela 24h - dados mockados - atualizado com sucesso -{' '}
+          <span className="tabular-nums">
+            {weatherSnapshot.updatedAt.toLocaleTimeString('pt-BR')}
+          </span>
         </p>
       </main>
     </div>
