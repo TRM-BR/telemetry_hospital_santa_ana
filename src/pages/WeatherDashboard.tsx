@@ -1,12 +1,9 @@
-import { AlertCircle, AlertTriangle, Check, ChevronRight, CloudRain, Radar } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Check, ChevronRight, Radar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import HistoryChart from '../components/dashboard/HistoryChart';
 import { cn } from '../lib/cn';
 import type { SeriesPoint } from '../types/telemetry';
-
-const RAIN_VIEWER_SRC =
-  'https://www.rainviewer.com/map.html?loc=-23.5373,-46.7453,10.030099623626088&oC=true&oCS=1&c=9&o=83&lm=1&layer=radar&sm=1&sn=1';
 
 const BASE_TIME = new Date('2026-06-17T15:00:00-03:00').getTime();
 const HOUR_MS = 60 * 60 * 1000;
@@ -203,13 +200,10 @@ function RadarCard() {
         </div>
       </div>
 
-      <iframe
-        title="Radar meteorologico RainViewer"
-        src={RAIN_VIEWER_SRC}
-        className="h-[50vh] min-h-[360px] w-full"
-        frameBorder="0"
-        loading="lazy"
-        allowFullScreen
+      <img
+        src="/guaratingueta-map.png"
+        alt="Radar Guaratinguetá"
+        className="h-[50vh] min-h-[360px] w-full object-cover"
       />
     </section>
   );
@@ -220,22 +214,26 @@ const WeatherDashboard = () => {
     <div className="min-h-screen w-full bg-secondary">
       <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 sm:px-8 min-h-[104px]">
-          <div className="flex items-center gap-3 text-primary">
-            <CloudRain className="h-6 w-6" />
-            <div className="leading-tight">
-              {/* <p className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
-                Hospital Santa Ana
-              </p> */}
-              <p className="mt-0.5 text-2xl font-bold text-foreground">Dashboard meteorologico</p>
+          <div className="flex items-center gap-4">
+            <img
+              src="/guaratingueta-coat.png"
+              alt="Brasão"
+              className="h-14 w-14 object-contain"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+            <div className="leading-tight hidden sm:block">
+              <p className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
+                Defesa Civil de Guaratinguetá
+              </p>
+              <p className="mt-0.5 text-2xl font-bold text-foreground">
+                Dashboard · Defesa Civil de Guaratinguetá
+              </p>
             </div>
           </div>
 
           <div className="hidden sm:flex items-center gap-2">
-            <span className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">Status</span>
-            {/* <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground">
-              <Info className="h-3.5 w-3.5 text-primary" />
-              Dados mockados
-            </span> */}
+            <span className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">Powered by</span>
+            <img src="/vector-logo.svg" alt="Vector" className="h-6 w-auto object-contain" />
           </div>
         </div>
       </header>

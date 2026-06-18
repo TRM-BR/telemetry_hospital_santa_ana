@@ -113,10 +113,12 @@ const Dashboard = () => {
 
   const hasSeries = levelPctSeries.length > 0 || levelMSeries.length > 0;
 
+  const installationName = data?.installation_name ?? 'Hospital Santa Ana';
+
   return (
     <div className="min-h-screen w-full bg-secondary">
       <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 sm:px-8 min-h-[104px]">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 sm:px-8">
           <button
             type="button"
             onClick={() => navigate(`/instalacao/${id}`)}
@@ -126,26 +128,29 @@ const Dashboard = () => {
             Voltar à instalação
           </button>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 text-primary">
             <img
-              src="/guaratingueta-coat.png"
+              src="/santana-coat.png"
               alt="Brasão"
-              className="h-14 w-14 object-contain"
+              className="h-10 w-10 object-contain"
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
             />
             <div className="leading-tight hidden sm:block">
               <p className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
-                Defesa Civil de Guaratinguetá
+                Santana do Parnaíba
               </p>
-              <p className="mt-0.5 text-2xl font-bold text-foreground">
-                Dashboard · Defesa Civil de Guaratinguetá
+              <p className="text-[12px] font-semibold text-foreground">
+                Dashboard · {installationName}
               </p>
             </div>
           </div>
 
           <div className="hidden sm:flex items-center gap-2">
             <span className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">Powered by</span>
-            <img src="/vector-logo.svg" alt="Vector" className="h-6 w-auto object-contain" />
+            <span className="inline-flex items-center gap-1 font-display text-sm text-primary">
+              <Droplets className="h-3.5 w-3.5" />
+              Vector
+            </span>
           </div>
         </div>
       </header>
