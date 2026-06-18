@@ -25,7 +25,7 @@ router = APIRouter(tags=["dashboard"])
 
 # Métricas reais disponíveis para o hospital (analógico)
 _LATEST_METRICS = ("level_pct", "level_m", "current_ma", "battery_v", "signal", "voltage_v")
-_SERIES_METRICS = ("level_pct", "level_m", "current_ma")
+_SERIES_METRICS = ("level_pct", "level_m", "current_ma", "battery_v", "signal", "voltage_v")
 # Device considerado "ativo" se reportou nos últimos N minutos
 _ACTIVE_WINDOW_MIN = 60
 
