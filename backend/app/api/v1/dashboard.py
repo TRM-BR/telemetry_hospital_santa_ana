@@ -205,23 +205,55 @@ def _epoch_ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
 
 
-async def _find_installation(db: AsyncSession, slug: str) -> Optional[Installation]:
-    """Resolve installation aceitando slug com hífen ou underscore."""
-    candidates: list[str] = []
-    for c in (slug, slug.replace("-", "_"), slug.replace("_", "-")):
-        if c not in candidates:
-            candidates.append(c)
-    for c in candidates:
-        result = await db.execute(select(Installation).where(Installation.slug == c))
-        inst = result.scalar_one_or_none()
-        if inst:
-            return inst
+async def _find_installation(db, slug: str):
+    """Busca instalação usando apenas colunas existentes no schema atual."""
+    from types import SimpleNamespace
+    from sqlalchemy import text
+
+    raw = (slug or "").strip()
+    candidates = []
+
+    if raw:
+        candidates.append(raw)
+        candidates.append(raw.replace("-", "_"))
+
+    candidates.append("hospital_santa_ana")
+
+    seen = set()
+
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+
+        seen.add(candidate)
+
+        result = await db.execute(
+            text("""
+                SELECT
+                    id,
+                    slug,
+                    name,
+                    lat,
+                    lng,
+                    group_name,
+                    is_active,
+                    notes,
+                    created_at,
+                    updated_at
+                FROM installations
+                WHERE slug = :slug
+                LIMIT 1
+            """),
+            {"slug": candidate},
+        )
+
+        row = result.mappings().first()
+
+        if row:
+            return SimpleNamespace(**dict(row))
+
     return None
 
-
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
 
 @router.get("/installations/{slug}/dashboard", response_model=InstallationDashboardResponse)
 async def get_dashboard(
