@@ -1,7 +1,7 @@
 import { RefreshCw } from 'lucide-react';
 import { Switch } from '../ui/Switch';
 import type { WindowKey, FilterMode } from '../../types/telemetry';
-import { WINDOW_OPTIONS } from '../../mocks/hospitalSantaAnaMock';
+import { WINDOW_OPTIONS } from '../../constants/dashboard';
 import { cn } from '../../lib/cn';
 
 interface FiltersBarProps {

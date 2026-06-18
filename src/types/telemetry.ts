@@ -75,3 +75,37 @@ export interface Alert {
 
 export type WindowKey = '1h' | '6h' | '24h' | '7d' | '30d';
 export type FilterMode = 'janela' | 'periodo';
+
+// ── Respostas reais da API (/installations/{slug}/dashboard) ────────────────
+
+export interface DashDeviceLatest {
+  level_pct: number | null;
+  level_m: number | null;
+  current_ma: number | null;
+  battery_v: number | null;
+  signal: number | null;
+  voltage_v: number | null;
+}
+
+export interface DashDevice {
+  device_id: number;
+  imei: string;
+  label: string | null;
+  model: string | null;
+  status: string | null;
+  last_seen_utc: string | null;
+  active: boolean;
+  latest: DashDeviceLatest;
+  // séries por métrica: level_pct, level_m, current_ma
+  series: Record<string, SeriesPoint[]>;
+}
+
+export interface InstallationDashboardResponse {
+  installation_slug: string;
+  installation_name: string;
+  hours: number;
+  last_seen_utc: string | null;
+  device_count: number;
+  active_count: number;
+  devices: DashDevice[];
+}

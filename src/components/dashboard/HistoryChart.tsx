@@ -78,11 +78,21 @@ export function HistoryChart({
     );
   }
 
-  const data = series[0]?.data.map((p, i) => {
-    const row: Record<string, number> = { t: p.t };
-    series.forEach((s) => { row[s.key] = s.data[i]?.v ?? 0; });
+  // Merge por timestamp (não por índice): remotas podem reportar em
+  // instantes diferentes. Valor ausente fica null (gap), não 0.
+  const lookups = series.map((s) => {
+    const m = new Map<number, number>();
+    s.data.forEach((p) => m.set(p.t, p.v));
+    return m;
+  });
+  const allTs = Array.from(
+    new Set(series.flatMap((s) => s.data.map((p) => p.t))),
+  ).sort((a, b) => a - b);
+  const data = allTs.map((t) => {
+    const row: Record<string, number | null> = { t };
+    series.forEach((s, i) => { row[s.key] = lookups[i].get(t) ?? null; });
     return row;
-  }) ?? [];
+  });
 
   let resolvedDomain: [number, number] | [number, 'auto'] | ['auto', 'auto'] | undefined = undefined;
   if (yDomain === 'smart') {
@@ -244,7 +254,7 @@ export function HistoryChart({
                 fillOpacity={1}
                 activeDot={{ r: 5, strokeWidth: 2, stroke: 'hsl(var(--card))' }}
                 isAnimationActive={false}
-                connectNulls={false}
+                connectNulls={true}
               />
             ))}
           </AreaChart>

@@ -1,51 +1,87 @@
 """
-/api/v1/installations/{slug}/dashboard — Snapshot das métricas mais recentes.
+/api/v1/installations/{slug}/dashboard — Snapshot real por device (analógico DTN-200-FPS0).
 /api/v1/installations/{slug}/topology  — Estado por device (per-device metrics + alertas).
+
+Somente dados reais: level_pct, level_m, current_ma, battery_v, signal, voltage_v.
+Sem pressão/vazão/consumo — hardware analógico não os produz.
+
+Acesso público (sem auth), como /health: o frontend do hospital usa login mock
+(sem JWT real). Reavaliar quando houver autenticação real ponta a ponta.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, DbDep
+from app.api.deps import DbDep
 from app.db.models.installation import Installation
-from app.schemas.telemetry import DashboardResponse, MetricSnapshot
 
 router = APIRouter(tags=["dashboard"])
+
+# Métricas reais disponíveis para o hospital (analógico)
+_LATEST_METRICS = ("level_pct", "level_m", "current_ma", "battery_v", "signal", "voltage_v")
+_SERIES_METRICS = ("level_pct", "level_m", "current_ma")
+# Device considerado "ativo" se reportou nos últimos N minutos
+_ACTIVE_WINDOW_MIN = 60
 
 
 # ---------------------------------------------------------------------------
 # SQL
 # ---------------------------------------------------------------------------
 
-# DISTINCT ON (device_id, metric_name) — evita misturar leituras de grupos
+# Devices vinculados à instalação (vínculo ativo) + última coleta
+_SQL_DEVICES = text("""
+    SELECT
+        d.id     AS device_id,
+        d.imei,
+        d.label,
+        d.model,
+        d.status AS device_status,
+        (
+            SELECT MAX(pm.collected_at_utc)
+            FROM parsed_measurements pm
+            WHERE pm.device_id = d.id
+        ) AS last_seen_utc
+    FROM devices d
+    JOIN device_installations di ON di.device_id = d.id AND di.valid_to IS NULL
+    WHERE di.installation_id = :installation_id
+      AND d.is_active = true
+    ORDER BY d.id
+""")
+
+# Última leitura por (device, metric) — DISTINCT ON evita colapsar devices/grupos
 _SQL_LATEST = text("""
     SELECT DISTINCT ON (dm.device_id, dm.metric_name)
         dm.device_id,
         dm.metric_name,
         dm.value,
-        dm.unit,
         dm.derived_at_utc
     FROM derived_metrics dm
-    JOIN device_installations di ON di.device_id = dm.device_id
-    JOIN installations i ON i.id = di.installation_id
-    WHERE i.slug = :slug
-      AND di.valid_to IS NULL
+    WHERE dm.device_id = ANY(:device_ids)
+      AND dm.metric_name = ANY(:metrics)
     ORDER BY dm.device_id, dm.metric_name, dm.derived_at_utc DESC
 """)
 
-_SQL_ACTIVE_ALERTS = text("""
-    SELECT COUNT(*)
-    FROM alert_state als
-    JOIN installations i ON i.id = als.installation_id
-    WHERE i.slug = :slug AND als.is_active = true
+# Série temporal por device nas últimas N horas
+_SQL_SERIES = text("""
+    SELECT
+        dm.device_id,
+        dm.metric_name,
+        dm.value,
+        dm.derived_at_utc
+    FROM derived_metrics dm
+    WHERE dm.device_id = ANY(:device_ids)
+      AND dm.metric_name = ANY(:metrics)
+      AND dm.derived_at_utc >= now() - :hours * INTERVAL '1 hour'
+    ORDER BY dm.device_id, dm.metric_name, dm.derived_at_utc ASC
 """)
 
-# Topology: estado por device registrado na instalação
+# Topology: estado por device registrado na instalação (mantido)
 _SQL_TOPOLOGY = text("""
     SELECT
         d.id        AS device_id,
@@ -58,7 +94,6 @@ _SQL_TOPOLOGY = text("""
             FROM parsed_measurements pm
             WHERE pm.device_id = d.id
         ) AS last_seen_utc,
-        -- métricas mais recentes por device
         (
             SELECT json_object_agg(sq.metric_name, sq.value)
             FROM (
@@ -69,7 +104,6 @@ _SQL_TOPOLOGY = text("""
                 ORDER BY dm2.metric_name, dm2.derived_at_utc DESC
             ) sq
         ) AS latest_metrics,
-        -- alertas ativos por device
         (
             SELECT json_agg(json_build_object(
                 'rule_key', als.rule_key,
@@ -93,6 +127,43 @@ _SQL_TOPOLOGY = text("""
 # Schemas
 # ---------------------------------------------------------------------------
 
+class DashSeriesPoint(BaseModel):
+    t: int          # epoch ms (UTC)
+    v: float
+
+
+class DashDeviceLatest(BaseModel):
+    level_pct: Optional[float] = None
+    level_m: Optional[float] = None
+    current_ma: Optional[float] = None
+    battery_v: Optional[float] = None
+    signal: Optional[float] = None
+    voltage_v: Optional[float] = None
+
+
+class DashDevice(BaseModel):
+    device_id: int
+    imei: str
+    label: Optional[str]
+    model: Optional[str]
+    status: Optional[str]
+    last_seen_utc: Optional[str]
+    active: bool
+    latest: DashDeviceLatest
+    # séries por métrica: level_pct, level_m, current_ma
+    series: dict[str, list[DashSeriesPoint]]
+
+
+class InstallationDashboardResponse(BaseModel):
+    installation_slug: str
+    installation_name: str
+    hours: int
+    last_seen_utc: Optional[str]
+    device_count: int
+    active_count: int
+    devices: list[DashDevice]
+
+
 class DeviceTopology(BaseModel):
     device_id: int
     imei: str
@@ -108,7 +179,6 @@ class DeviceTopology(BaseModel):
     signal: Optional[float] = None
     sensor_fault: Optional[bool] = None
     active_alerts: list[dict[str, Any]] = []
-    # Dragino fields null for compatibility
     pressure: None = None
     flow: None = None
 
@@ -124,60 +194,138 @@ class TopologyResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _ts_z(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _epoch_ms(dt: datetime) -> int:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
+async def _find_installation(db: AsyncSession, slug: str) -> Optional[Installation]:
+    """Resolve installation aceitando slug com hífen ou underscore."""
+    candidates: list[str] = []
+    for c in (slug, slug.replace("-", "_"), slug.replace("_", "-")):
+        if c not in candidates:
+            candidates.append(c)
+    for c in candidates:
+        result = await db.execute(select(Installation).where(Installation.slug == c))
+        inst = result.scalar_one_or_none()
+        if inst:
+            return inst
+    return None
 
 
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/installations/{slug}/dashboard", response_model=DashboardResponse)
-async def get_dashboard(slug: str, user: CurrentUser, db: DbDep):
-    result = await db.execute(select(Installation).where(Installation.slug == slug))
-    inst = result.scalar_one_or_none()
+@router.get("/installations/{slug}/dashboard", response_model=InstallationDashboardResponse)
+async def get_dashboard(
+    slug: str,
+    db: DbDep,
+    hours: int = Query(24, ge=1, le=720),
+):
+    """Snapshot real por device + série temporal nas últimas `hours` horas."""
+    inst = await _find_installation(db, slug)
     if not inst:
         raise HTTPException(status_code=404, detail="Instalação não encontrada")
 
-    metrics_result = await db.execute(_SQL_LATEST, {"slug": slug})
-    metric_rows = metrics_result.fetchall()
+    device_rows = (await db.execute(_SQL_DEVICES, {"installation_id": inst.id})).fetchall()
 
-    # Agrega por métrica — se mais de um device, pega o mais recente por device_id+metric_name
-    # já feito pelo DISTINCT ON. Para o dashboard agregado, pega o valor do device mais recente.
-    metrics_by_name: dict[str, MetricSnapshot] = {}
-    latest_ts = None
-    for device_id, metric_name, value, unit, ts in metric_rows:
-        # Para dashboard global: mantém o primeiro (mais recente por device+metric).
-        # O frontend pode usar /topology para ver per-device.
-        if metric_name not in metrics_by_name:
-            metrics_by_name[metric_name] = MetricSnapshot(
-                value=value,
-                unit=unit,
-                derived_at_utc=_ts_z(ts),
-            )
-        if latest_ts is None or ts > latest_ts:
-            latest_ts = ts
+    if not device_rows:
+        return InstallationDashboardResponse(
+            installation_slug=inst.slug,
+            installation_name=inst.name,
+            hours=hours,
+            last_seen_utc=None,
+            device_count=0,
+            active_count=0,
+            devices=[],
+        )
 
-    alerts_result = await db.execute(_SQL_ACTIVE_ALERTS, {"slug": slug})
-    active_alerts = alerts_result.scalar() or 0
+    device_ids = [r.device_id for r in device_rows]
 
-    return DashboardResponse(
-        installation_slug=slug,
+    # Última leitura por (device, metric)
+    latest_rows = (await db.execute(
+        _SQL_LATEST,
+        {"device_ids": device_ids, "metrics": list(_LATEST_METRICS)},
+    )).fetchall()
+    latest_by_device: dict[int, dict[str, float]] = {}
+    for device_id, metric_name, value, _ts in latest_rows:
+        latest_by_device.setdefault(device_id, {})[metric_name] = value
+
+    # Série temporal por (device, metric)
+    series_rows = (await db.execute(
+        _SQL_SERIES,
+        {"device_ids": device_ids, "metrics": list(_SERIES_METRICS), "hours": hours},
+    )).fetchall()
+    series_by_device: dict[int, dict[str, list[DashSeriesPoint]]] = {}
+    for device_id, metric_name, value, ts in series_rows:
+        bucket = series_by_device.setdefault(device_id, {})
+        bucket.setdefault(metric_name, []).append(
+            DashSeriesPoint(t=_epoch_ms(ts), v=float(value))
+        )
+
+    now = datetime.now(timezone.utc)
+    devices: list[DashDevice] = []
+    overall_last_seen: Optional[datetime] = None
+    active_count = 0
+
+    for r in device_rows:
+        last_seen: Optional[datetime] = r.last_seen_utc
+        is_active = (
+            last_seen is not None
+            and (now - (last_seen if last_seen.tzinfo else last_seen.replace(tzinfo=timezone.utc))).total_seconds()
+            <= _ACTIVE_WINDOW_MIN * 60
+        )
+        if is_active:
+            active_count += 1
+        if last_seen is not None and (overall_last_seen is None or last_seen > overall_last_seen):
+            overall_last_seen = last_seen
+
+        lm = latest_by_device.get(r.device_id, {})
+        devices.append(DashDevice(
+            device_id=r.device_id,
+            imei=r.imei,
+            label=r.label,
+            model=r.model,
+            status=r.device_status,
+            last_seen_utc=_ts_z(last_seen) if last_seen else None,
+            active=is_active,
+            latest=DashDeviceLatest(
+                level_pct=lm.get("level_pct"),
+                level_m=lm.get("level_m"),
+                current_ma=lm.get("current_ma"),
+                battery_v=lm.get("battery_v"),
+                signal=lm.get("signal"),
+                voltage_v=lm.get("voltage_v"),
+            ),
+            series={m: series_by_device.get(r.device_id, {}).get(m, []) for m in _SERIES_METRICS},
+        ))
+
+    return InstallationDashboardResponse(
+        installation_slug=inst.slug,
         installation_name=inst.name,
-        last_seen_utc=_ts_z(latest_ts) if latest_ts else None,
-        metrics=metrics_by_name,
-        active_alerts=active_alerts,
+        hours=hours,
+        last_seen_utc=_ts_z(overall_last_seen) if overall_last_seen else None,
+        device_count=len(devices),
+        active_count=active_count,
+        devices=devices,
     )
 
 
 @router.get("/installations/{slug}/topology", response_model=TopologyResponse)
-async def get_topology(slug: str, user: CurrentUser, db: DbDep):
+async def get_topology(slug: str, db: DbDep):
     """Estado por device analógico registrado na instalação."""
-    result = await db.execute(select(Installation).where(Installation.slug == slug))
-    inst = result.scalar_one_or_none()
+    inst = await _find_installation(db, slug)
     if not inst:
         raise HTTPException(status_code=404, detail="Instalação não encontrada")
 
-    topo_result = await db.execute(_SQL_TOPOLOGY, {"slug": slug})
+    topo_result = await db.execute(_SQL_TOPOLOGY, {"slug": inst.slug})
     rows = topo_result.fetchall()
 
     devices: list[DeviceTopology] = []
@@ -185,9 +333,7 @@ async def get_topology(slug: str, user: CurrentUser, db: DbDep):
         metrics: dict = row.latest_metrics or {}
         alerts: list = row.active_alerts or []
 
-        has_sensor_fault = any(
-            a.get("rule_key") == "sensor_fault" for a in alerts
-        )
+        has_sensor_fault = any(a.get("rule_key") == "sensor_fault" for a in alerts)
 
         devices.append(DeviceTopology(
             device_id=row.device_id,
@@ -207,7 +353,7 @@ async def get_topology(slug: str, user: CurrentUser, db: DbDep):
         ))
 
     return TopologyResponse(
-        installation_slug=slug,
+        installation_slug=inst.slug,
         installation_name=inst.name,
         devices=devices,
     )
