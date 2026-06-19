@@ -47,7 +47,7 @@ export function useAppSidebar(): AppSidebarContextType {
 const NAV_ITEMS = [
   { to: '/menu',    label: 'Menu',    Icon: MapIcon       },
   { to: '/remotas', label: 'Remotas', Icon: Radio         },
-  { to: '/meteorologia', label: 'Clima', Icon: CloudRain  },
+  // { to: '/meteorologia', label: 'Clima', Icon: CloudRain  }, // oculto — rota/página mantidas
   { to: '/alertas', label: 'Avisos',  Icon: AlertTriangle },
 ];
 
