@@ -29,6 +29,14 @@ _SERIES_METRICS = ("level_pct", "level_m", "current_ma", "battery_v", "signal", 
 # Device considerado "ativo" se reportou nos últimos N minutos
 _ACTIVE_WINDOW_MIN = 60
 
+# Estimativa de "cheio operacional" = referência de 100% do fill% do dashboard.
+# p90 dos máximos diários de level_m em 30 d, por device. NÃO confundir com o level_pct
+# GRAVADO em derived_metrics, que é a escala bruta do sensor (ratio 4–20 mA) e alimenta
+# alertas/baseline. Esta referência é calculada só em read-time e nunca é persistida.
+_FULL_ESTIMATE_TZ = "America/Sao_Paulo"   # dia operacional no fuso do tenant
+_FULL_PCTL = 0.9                          # p90 dos máximos diários
+_FULL_MIN_DAYS_HIGH = 10                  # ≥ → confiança "high"; 1..9 → "low"; 0 → fallback
+
 
 # ---------------------------------------------------------------------------
 # SQL
@@ -81,18 +89,30 @@ _SQL_SERIES = text("""
     ORDER BY dm.device_id, dm.metric_name, dm.derived_at_utc ASC
 """)
 
-# Pico de level_m por device nos últimos 30 dias = referência de 100% de enchimento.
-# Janela fixa (independente do parâmetro `hours` da rota). Usa level_m (não current_ma)
-# porque level_m só é gravado quando a corrente está na faixa válida → exclui spikes de
-# undercurrent/overrange automaticamente.
-_SQL_PEAK_LEVEL_30D = text("""
-    SELECT dm.device_id, MAX(dm.value) AS peak_level_m
-    FROM derived_metrics dm
-    WHERE dm.device_id = ANY(:device_ids)
-      AND dm.metric_name = 'level_m'
-      AND dm.value IS NOT NULL
-      AND dm.derived_at_utc >= now() - INTERVAL '30 days'
-    GROUP BY dm.device_id
+# Cheio operacional estimado por device (30 d) — referência de 100% do fill% do dashboard.
+# Lógica: MAX diário de level_m por dia operacional (fuso tenant), depois p90 desses picos.
+# Uma passada retorna percentil, máximo e contagem de dias; Python decide o tier.
+# Janela fixa (independente do parâmetro `hours` da rota).
+_SQL_FULL_LEVEL_30D = text("""
+    WITH daily AS (
+        SELECT
+            dm.device_id,
+            (dm.derived_at_utc AT TIME ZONE :tz)::date AS day,
+            MAX(dm.value)                              AS day_max
+        FROM derived_metrics dm
+        WHERE dm.device_id = ANY(:device_ids)
+          AND dm.metric_name = 'level_m'
+          AND dm.value IS NOT NULL
+          AND dm.derived_at_utc >= now() - INTERVAL '30 days'
+        GROUP BY dm.device_id, day
+    )
+    SELECT
+        device_id,
+        percentile_cont(CAST(:pctl AS double precision)) WITHIN GROUP (ORDER BY day_max) AS pctl_level_m,
+        MAX(day_max)                                                                      AS top_day_m,
+        count(*)                                                                          AS day_count
+    FROM daily
+    GROUP BY device_id
 """)
 
 # Topology: estado por device registrado na instalação (mantido)
@@ -166,6 +186,11 @@ class DashDevice(BaseModel):
     latest: DashDeviceLatest
     # séries por métrica: level_pct, level_m, current_ma
     series: dict[str, list[DashSeriesPoint]]
+    # referência de 100% operacional (cheio estimado, read-time, não persistido)
+    fill_reference_m: Optional[float] = None
+    fill_reference_source: str = "none"       # estimated_daily_max_p90 | provisional_p90 | provisional_observed_max | none
+    fill_reference_confidence: str = "none"   # high | low | none
+    fill_reference_day_count: int = 0
 
 
 class InstallationDashboardResponse(BaseModel):
@@ -219,15 +244,36 @@ def _epoch_ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
 
 
-def _fill_pct(level_m: Optional[float], peak_level_m: Optional[float]) -> Optional[float]:
-    """% de enchimento relativa ao pico de nível dos últimos 30 dias (100% = pico).
+def _fill_pct(level_m: Optional[float], ref_m: Optional[float]) -> Optional[float]:
+    """% de enchimento relativa ao cheio operacional estimado (100% = ref_m).
 
-    Retorna None quando não há leitura de nível ou pico válido — o chamador faz
-    fallback para o level_pct armazenado (escala do sensor).
+    Retorna None quando não há leitura de nível ou referência válida — o chamador faz
+    fallback para o level_pct armazenado (escala do sensor, 0–100% de 4–20 mA).
     """
-    if level_m is None or peak_level_m is None or peak_level_m <= 0:
+    if level_m is None or ref_m is None or ref_m <= 0:
         return None
-    return max(0.0, min(100.0, level_m / peak_level_m * 100.0))
+    return max(0.0, min(100.0, level_m / ref_m * 100.0))
+
+
+def _full_ref(
+    pctl_m: Optional[float],
+    top_m: Optional[float],
+    n: Optional[int],
+) -> tuple[Optional[float], str, str, int]:
+    """Cheio operacional estimado por device. Retorna (reference_m, source, confidence, day_count).
+
+    reference_m None → chamador usa fallback level_pct gravado (escala do sensor).
+    """
+    n = int(n or 0)
+    if n <= 0:
+        return None, "none", "none", 0
+    if n >= _FULL_MIN_DAYS_HIGH and pctl_m and pctl_m > 0:
+        return float(pctl_m), "estimated_daily_max_p90", "high", n
+    if n >= 3 and pctl_m and pctl_m > 0:
+        return float(pctl_m), "provisional_p90", "low", n
+    if top_m and top_m > 0:   # 1–2 dias: p90 instável, usa MAX
+        return float(top_m), "provisional_observed_max", "low", n
+    return None, "none", "none", n
 
 
 async def _find_installation(db, slug: str):
@@ -327,15 +373,14 @@ async def get_dashboard(
             DashSeriesPoint(t=_epoch_ms(ts), v=float(value))
         )
 
-    # Pico de level_m por device (30 d) — referência de 100% de enchimento.
-    peak_rows = (await db.execute(
-        _SQL_PEAK_LEVEL_30D,
-        {"device_ids": device_ids},
+    # Cheio operacional estimado por device (30 d) — referência de 100% do fill% do dashboard.
+    full_rows = (await db.execute(
+        _SQL_FULL_LEVEL_30D,
+        {"device_ids": device_ids, "tz": _FULL_ESTIMATE_TZ, "pctl": _FULL_PCTL},
     )).fetchall()
-    peak_by_device: dict[int, float] = {
-        device_id: float(peak)
-        for device_id, peak in peak_rows
-        if peak is not None
+    full_by_device: dict[int, tuple] = {
+        device_id: _full_ref(pctl_m, top_m, day_count)
+        for device_id, pctl_m, top_m, day_count in full_rows
     }
 
     now = datetime.now(timezone.utc)
@@ -357,17 +402,19 @@ async def get_dashboard(
 
         lm = latest_by_device.get(r.device_id, {})
         dev_series = series_by_device.get(r.device_id, {})
-        peak = peak_by_device.get(r.device_id)
+        ref_m, ref_source, ref_conf, ref_days = full_by_device.get(
+            r.device_id, (None, "none", "none", 0)
+        )
 
-        # level_pct passa a ser % de enchimento vs pico de 30 d (100% = pico).
-        # Fallback ao level_pct armazenado (escala do sensor) quando não há pico.
-        fill_latest = _fill_pct(lm.get("level_m"), peak)
+        # fill% do dashboard = level_m / cheio_operacional × 100 (escala operacional, read-time).
+        # Fallback ao level_pct gravado (escala do sensor 4–20 mA) quando sem referência.
+        fill_latest = _fill_pct(lm.get("level_m"), ref_m)
         level_pct_latest = fill_latest if fill_latest is not None else lm.get("level_pct")
 
         level_m_series = dev_series.get("level_m", [])
-        if peak and peak > 0 and level_m_series:
+        if ref_m and ref_m > 0 and level_m_series:
             level_pct_series = [
-                DashSeriesPoint(t=p.t, v=max(0.0, min(100.0, p.v / peak * 100.0)))
+                DashSeriesPoint(t=p.t, v=max(0.0, min(100.0, p.v / ref_m * 100.0)))
                 for p in level_m_series
             ]
         else:
@@ -393,6 +440,10 @@ async def get_dashboard(
                 voltage_v=lm.get("voltage_v"),
             ),
             series=series_out,
+            fill_reference_m=ref_m,
+            fill_reference_source=ref_source,
+            fill_reference_confidence=ref_conf,
+            fill_reference_day_count=ref_days,
         ))
 
     return InstallationDashboardResponse(

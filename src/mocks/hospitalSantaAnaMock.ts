@@ -7,7 +7,6 @@ import type {
   Installation,
   TankGroup,
   ContextReservoir,
-  Alert,
   SeriesPoint,
   DashboardSnapshot,
   InstallationMetrics,
@@ -62,28 +61,6 @@ export const tankGroups: TankGroup[] = [
 export const contextReservoirs: ContextReservoir[] = [
   { id: 'recalque-1', name: 'Recalque 1', capacityLiters: 40_000 },
   { id: 'recalque-2', name: 'Recalque 2', capacityLiters: 40_000 },
-];
-
-// ── Alertas ─────────────────────────────────────────────────
-export const alerts: Alert[] = [
-  {
-    id: 'a-001',
-    severity: 'attention',
-    message: 'Grupo 2 abaixo do nível ideal — 64% (mínimo recomendado: 70%)',
-    timeLabel: 'há 12 min',
-  },
-  {
-    id: 'a-002',
-    severity: 'info',
-    message: 'Consumo acima da média no período da manhã (6h–10h)',
-    timeLabel: 'há 1h 42 min',
-  },
-  {
-    id: 'a-003',
-    severity: 'info',
-    message: 'Última leitura recebida com sucesso',
-    timeLabel: 'há 1 min',
-  },
 ];
 
 // ── Helpers para gerar séries ───────────────────────────────

@@ -10,6 +10,7 @@ import type {
   WindowKey,
   FilterMode,
   DashDevice,
+  FillReferenceSource,
   InstallationDashboardResponse,
 } from '../types/telemetry';
 
@@ -52,6 +53,33 @@ function fmtDateTime(iso: string | null): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
+}
+
+const FILL_REF_NOTE: Record<FillReferenceSource, string> = {
+  estimated_daily_max_p90:
+    'Nível em %: 100% = cheio operacional estimado pelo pico típico diário dos últimos 30 dias.',
+  provisional_p90:
+    'Nível em %: 100% = referência provisória pelo pico típico diário do histórico disponível.',
+  provisional_observed_max:
+    'Nível em %: 100% = referência provisória pelo maior nível observado até agora.',
+  none: 'Nível em %: exibindo percentual bruto da escala do sensor (sem histórico suficiente para estimar o cheio operacional).',
+};
+
+function fillRefNote(devices: DashDevice[]): string | null {
+  if (devices.length === 0) return null;
+  // Usa a source do primeiro device com source != 'none'; se todos 'none', usa 'none'.
+  const priority: FillReferenceSource[] = [
+    'estimated_daily_max_p90',
+    'provisional_p90',
+    'provisional_observed_max',
+    'none',
+  ];
+  for (const src of priority) {
+    if (devices.some((d) => d.fill_reference_source === src)) {
+      return FILL_REF_NOTE[src];
+    }
+  }
+  return null;
 }
 
 const CHART_HEIGHT = 'h-[280px]';
@@ -255,9 +283,9 @@ const Dashboard = () => {
             Janela {windowKey} · {devices.length} remota(s) ·{' '}
             {data?.last_seen_utc ? `atualizado ${fmtDateTime(data.last_seen_utc)}` : 'sem dados'}
           </p>
-          {devices.length > 0 && (
+          {fillRefNote(devices) && (
             <p className="text-[11px] text-muted-foreground/70">
-              Nível em %: 100% = nível máximo registrado nos últimos 30 dias.
+              {fillRefNote(devices)}
             </p>
           )}
         </div>

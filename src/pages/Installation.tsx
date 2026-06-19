@@ -13,6 +13,7 @@ import StatusRing from '../components/installation/StatusRing';
 import KpiCard from '../components/dashboard/KpiCard';
 import NavCard from '../components/installation/NavCard';
 import { HospitalHydraulicScheme } from '../components/topology/HospitalHydraulicScheme';
+import { InstallationAlertsCard } from '../components/dashboard/InstallationAlertsCard';
 import { useCountUp } from '../hooks/useCountUp';
 import { cn } from '../lib/cn';
 import type { InstallationStatus } from '../types/telemetry';
@@ -173,6 +174,9 @@ const Installation = () => {
             <KpiCard icon={AlertTriangle} label="Anomalias"  value={metrics.anomalias}                                                                  delayMs={240} tone={metrics.anomalias > 0 ? 'accent' : 'default'} />
           </div>
         </section>
+
+        {/* ── Card de alertas ──────────────────────────── */}
+        <InstallationAlertsCard installationId={id} />
 
         {/* ── Explorar ─────────────────────────────────── */}
         <section>

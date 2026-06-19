@@ -1,6 +1,9 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { ReactElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { isAuthenticated } from './services/auth';
+
+const queryClient = new QueryClient();
 
 import Login from './pages/Login';
 import MapPage from './pages/Map';
@@ -92,11 +95,13 @@ function AppContent() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <AppSidebarProvider>
-        <AppContent />
-      </AppSidebarProvider>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AppSidebarProvider>
+          <AppContent />
+        </AppSidebarProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }
 
