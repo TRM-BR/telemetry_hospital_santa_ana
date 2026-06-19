@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Droplets } from 'lucide-react';
 
 import FiltersBar from '../components/dashboard/FiltersBar';
+import { FlowBarChart } from '../components/dashboard/FlowBarChart';
 import HistoryChart, { type ChartSeries } from '../components/dashboard/HistoryChart';
 import { LevelGaugeCard } from '../components/dashboard/LevelGaugeCard';
 import { WINDOW_TO_HOURS, CHART_COLORS } from '../constants/dashboard';
@@ -141,6 +142,17 @@ const Dashboard = () => {
 
   const hasSeries = levelPctSeries.length > 0 || levelMSeries.length > 0;
 
+  // Linha 4: vazão por grupo (flow_hourly_lph = barras; flow_net_lph = linhas)
+  const perDeviceFlowHourly = useMemo(
+    () => devices.map((d, i) => buildSeriesForDevice(d, 'flow_hourly_lph', i)),
+    [devices],
+  );
+  const perDeviceFlowNet = useMemo(
+    () => devices.map((d, i) => buildSeriesForDevice(d, 'flow_net_lph', i)),
+    [devices],
+  );
+  const hasFlowSeries = perDeviceFlowHourly.some((s) => s.length > 0);
+
   const installationName = data?.installation_name ?? 'Hospital Santa Ana';
 
   return (
@@ -276,6 +288,54 @@ const Dashboard = () => {
               />
             )}
           </div>
+        )}
+
+        {/* Linha 4 — Vazão por grupo */}
+        {hasFlowSeries && (
+          <>
+            {/* Barras: vazão horária assinada */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
+              {devices.map((d, i) => {
+                const hourlyData = d.series?.['flow_hourly_lph'] ?? [];
+                if (hourlyData.length === 0) return null;
+                return (
+                  <FlowBarChart
+                    key={d.device_id}
+                    title={`Vazão (L/h) — ${groupLabel(i)}`}
+                    data={hourlyData}
+                    label={groupLabel(i)}
+                    windowKey={windowKey}
+                    chartHeightClass={CHART_HEIGHT}
+                    delayMs={i * 80}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Linhas: evolução contínua da vazão */}
+            {perDeviceFlowNet.some((s) => s.length > 0) && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
+                {devices.map((d, i) => {
+                  const series = perDeviceFlowNet[i];
+                  if (!series || series.length === 0) return null;
+                  return (
+                    <HistoryChart
+                      key={d.device_id}
+                      title={`Evolução da Vazão (L/h) — ${groupLabel(i)}`}
+                      unit="L/h"
+                      windowKey={windowKey}
+                      yDomain={['auto', 'auto']}
+                      yAxisWidth={52}
+                      series={series}
+                      chartHeightClass={CHART_HEIGHT}
+                      referenceLines={[{ value: 0, label: '0', color: 'hsl(var(--muted-foreground))' }]}
+                      delayMs={i * 80}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
 
         <div className="space-y-1">

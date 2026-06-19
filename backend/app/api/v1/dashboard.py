@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import DbDep
 from app.db.models.installation import Installation
+from app.processing.derivations import flow_from_level
 
 router = APIRouter(tags=["dashboard"])
 
@@ -28,6 +29,10 @@ _LATEST_METRICS = ("level_pct", "level_m", "current_ma", "battery_v", "signal", 
 _SERIES_METRICS = ("level_pct", "level_m", "current_ma", "battery_v", "signal", "voltage_v")
 # Device considerado "ativo" se reportou nos últimos N minutos
 _ACTIVE_WINDOW_MIN = 60
+
+# Capacidade total por grupo: 4 caixas × 10.000 L = 40.000 L.
+# Para override por device no futuro: trocar por dict[device_id, float] ou puxar de config.
+_TANK_CAPACITY_L = 40_000.0
 
 # Estimativa de "cheio operacional" = referência de 100% do fill% do dashboard.
 # p90 dos máximos diários de level_m em 30 d, por device. NÃO confundir com o level_pct
@@ -422,6 +427,21 @@ async def get_dashboard(
 
         series_out = {m: dev_series.get(m, []) for m in _SERIES_METRICS}
         series_out["level_pct"] = level_pct_series
+
+        # Vazão líquida derivada de nível — read-time, nunca persistida.
+        # flow_net_lph: janela 1h deslizante → gráfico de linha
+        # flow_hourly_lph: diff por balde horário → gráfico de barras
+        # Magnitude aproximada com histórico < 3 dias (level_pct na escala bruta do sensor).
+        if level_pct_series:
+            _pts = [(p.t, p.v) for p in level_pct_series]
+            series_out["flow_net_lph"] = [
+                DashSeriesPoint(t=t, v=v)
+                for t, v in flow_from_level.net_flow_series(_pts, _TANK_CAPACITY_L)
+            ]
+            series_out["flow_hourly_lph"] = [
+                DashSeriesPoint(t=t, v=v)
+                for t, v in flow_from_level.net_flow_hourly(_pts, _TANK_CAPACITY_L, _FULL_ESTIMATE_TZ)
+            ]
 
         devices.append(DashDevice(
             device_id=r.device_id,
