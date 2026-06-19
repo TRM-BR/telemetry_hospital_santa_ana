@@ -1,6 +1,7 @@
 import { useState, createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
-import { LogOut, Map as MapIcon, AlertTriangle, Radio, Pin, CloudRain } from 'lucide-react';
+// import { LogOut, Map as MapIcon, AlertTriangle, Radio, Pin, CloudRain } from 'lucide-react';
+import { LogOut, Map as MapIcon, AlertTriangle, Radio, Pin } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '../lib/cn';
 import { logout } from '../services/auth';
