@@ -53,6 +53,22 @@ def net_flow_series(
     return result
 
 
+def consumption_series(
+    points: Sequence[Point],
+    capacity_l: float,
+    window_hours: float = 1.0,
+) -> list[Point]:
+    """Consumo retificado (L/h), sempre ≥ 0.
+
+    Transforma net_flow_series: períodos de enchimento → 0, consumo → magnitude positiva.
+    Linha sobe com a intensidade do consumo e zera quando cessa ou inverte.
+    """
+    return [
+        (t, max(0.0, -v))
+        for t, v in net_flow_series(points, capacity_l, window_hours)
+    ]
+
+
 def net_flow_hourly(
     points: Sequence[Point],
     capacity_l: float,

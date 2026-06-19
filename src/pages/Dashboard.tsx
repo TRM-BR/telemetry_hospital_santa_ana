@@ -148,7 +148,7 @@ const Dashboard = () => {
     [devices],
   );
   const perDeviceFlowNet = useMemo(
-    () => devices.map((d, i) => buildSeriesForDevice(d, 'flow_net_lph', i)),
+    () => devices.map((d, i) => buildSeriesForDevice(d, 'flow_consumo_lph', i)),
     [devices],
   );
   const hasFlowSeries = perDeviceFlowHourly.some((s) => s.length > 0);
@@ -321,14 +321,13 @@ const Dashboard = () => {
                   return (
                     <HistoryChart
                       key={d.device_id}
-                      title={`Evolução da Vazão (L/h) — ${groupLabel(i)}`}
+                      title={`Consumo (L/h) — ${groupLabel(i)}`}
                       unit="L/h"
                       windowKey={windowKey}
-                      yDomain={['auto', 'auto']}
+                      yDomain={[0, 'auto']}
                       yAxisWidth={52}
                       series={series}
                       chartHeightClass={CHART_HEIGHT}
-                      referenceLines={[{ value: 0, label: '0', color: 'hsl(var(--muted-foreground))' }]}
                       delayMs={i * 80}
                     />
                   );

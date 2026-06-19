@@ -434,9 +434,9 @@ async def get_dashboard(
         # Magnitude aproximada com histórico < 3 dias (level_pct na escala bruta do sensor).
         if level_pct_series:
             _pts = [(p.t, p.v) for p in level_pct_series]
-            series_out["flow_net_lph"] = [
+            series_out["flow_consumo_lph"] = [
                 DashSeriesPoint(t=t, v=v)
-                for t, v in flow_from_level.net_flow_series(_pts, _TANK_CAPACITY_L)
+                for t, v in flow_from_level.consumption_series(_pts, _TANK_CAPACITY_L)
             ]
             series_out["flow_hourly_lph"] = [
                 DashSeriesPoint(t=t, v=v)
