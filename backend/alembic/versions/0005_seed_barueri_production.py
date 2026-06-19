@@ -24,6 +24,7 @@ Backfill:
 """
 from __future__ import annotations
 
+import os
 from alembic import op
 
 revision = "0005"
@@ -57,6 +58,9 @@ _LINKS = [
 
 
 def upgrade() -> None:
+    if os.getenv("TELEMETRY_CLIENT_SLUG") == "santana_parnaiba":
+        return
+
     # 1. Instalações (idempotente via ON CONFLICT)
     for slug, name in _INSTALLATIONS:
         op.execute(f"""
