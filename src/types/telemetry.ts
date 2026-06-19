@@ -87,6 +87,14 @@ export interface DashDeviceLatest {
   voltage_v: number | null;
 }
 
+export type FillReferenceSource =
+  | 'estimated_daily_max_p90'
+  | 'provisional_p90'
+  | 'provisional_observed_max'
+  | 'none';
+
+export type FillReferenceConfidence = 'high' | 'low' | 'none';
+
 export interface DashDevice {
   device_id: number;
   imei: string;
@@ -98,6 +106,11 @@ export interface DashDevice {
   latest: DashDeviceLatest;
   // séries por métrica: level_pct, level_m, current_ma
   series: Record<string, SeriesPoint[]>;
+  // referência de 100% operacional (cheio estimado, read-time, não persistido)
+  fill_reference_m: number | null;
+  fill_reference_source: FillReferenceSource;
+  fill_reference_confidence: FillReferenceConfidence;
+  fill_reference_day_count: number;
 }
 
 export interface InstallationDashboardResponse {
