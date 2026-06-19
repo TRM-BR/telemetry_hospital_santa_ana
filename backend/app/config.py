@@ -116,11 +116,11 @@ class Settings(BaseSettings):
 
     # ── Física do sensor (constantes de campo) ───────────────────────────────
     level_max_m: float = Field(
-        3.0,
+        4.0,
         description=(
-            "Altura máxima do reservatório em metros. "
-            "Usado para calcular level_m a partir de level_pct. "
-            "Override via TELEMETRY_LEVEL_MAX_M ou clients/<slug>.yaml."
+            "Escala máxima do sensor em metros (20 mA = level_max_m). "
+            "Fonte real: analog_profiles[model].level_max_m no YAML do cliente. "
+            "Este campo é fallback global — não é lido diretamente pelo derive_worker."
         ),
     )
     flow_liter_per_pulse: float = Field(

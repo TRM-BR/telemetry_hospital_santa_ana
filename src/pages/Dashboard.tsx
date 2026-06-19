@@ -5,7 +5,7 @@ import { ArrowLeft, Droplets } from 'lucide-react';
 import FiltersBar from '../components/dashboard/FiltersBar';
 import HistoryChart, { type ChartSeries } from '../components/dashboard/HistoryChart';
 import { LevelGaugeCard } from '../components/dashboard/LevelGaugeCard';
-import { WINDOW_TO_HOURS, DEVICE_COLORS } from '../constants/dashboard';
+import { WINDOW_TO_HOURS, CHART_COLORS } from '../constants/dashboard';
 import type {
   WindowKey,
   FilterMode,
@@ -20,7 +20,7 @@ function buildSeries(devices: DashDevice[], metric: string): ChartSeries[] {
     .map((d, i) => ({
       key: `dev_${d.device_id}`,
       label: groupLabel(i),
-      color: DEVICE_COLORS[i % DEVICE_COLORS.length],
+      color: CHART_COLORS[i % CHART_COLORS.length],
       data: d.series?.[metric] ?? [],
     }))
     .filter((s) => s.data.length > 0);
@@ -32,7 +32,7 @@ function buildSeriesForDevice(device: DashDevice, metric: string, idx: number): 
   return [{
     key: `dev_${device.device_id}`,
     label: groupLabel(idx),
-    color: DEVICE_COLORS[idx % DEVICE_COLORS.length],
+    color: 'var(--primary)',
     data,
   }];
 }
@@ -54,7 +54,7 @@ function fmtDateTime(iso: string | null): string {
   return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
 }
 
-const CHART_HEIGHT = 'h-[240px]';
+const CHART_HEIGHT = 'h-[280px]';
 
 const Dashboard = () => {
   const { id } = useParams<{ id: string }>();
@@ -210,6 +210,7 @@ const Dashboard = () => {
                   unit="%"
                   windowKey={windowKey}
                   yDomain={[0, 100]}
+                  yAxisWidth={52}
                   series={series}
                   chartHeightClass={CHART_HEIGHT}
                   delayMs={i * 80}
@@ -228,6 +229,7 @@ const Dashboard = () => {
                 unit="%"
                 windowKey={windowKey}
                 yDomain={[0, 100]}
+                yAxisWidth={52}
                 series={levelPctSeries}
                 chartHeightClass={CHART_HEIGHT}
                 delayMs={0}
@@ -239,7 +241,7 @@ const Dashboard = () => {
                 unit="m"
                 windowKey={windowKey}
                 yDomain={[0, 'auto']}
-                yAxisWidth={48}
+                yAxisWidth={52}
                 series={levelMSeries}
                 chartHeightClass={CHART_HEIGHT}
                 delayMs={80}
@@ -248,10 +250,17 @@ const Dashboard = () => {
           </div>
         )}
 
-        <p className="text-[11px] text-muted-foreground">
-          Janela {windowKey} · {devices.length} remota(s) ·{' '}
-          {data?.last_seen_utc ? `atualizado ${fmtDateTime(data.last_seen_utc)}` : 'sem dados'}
-        </p>
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground">
+            Janela {windowKey} · {devices.length} remota(s) ·{' '}
+            {data?.last_seen_utc ? `atualizado ${fmtDateTime(data.last_seen_utc)}` : 'sem dados'}
+          </p>
+          {devices.length > 0 && (
+            <p className="text-[11px] text-muted-foreground/70">
+              Nível em %: 100% = nível máximo registrado nos últimos 30 dias.
+            </p>
+          )}
+        </div>
       </main>
     </div>
   );

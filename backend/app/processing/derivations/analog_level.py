@@ -39,7 +39,7 @@ def current_to_level(
     current_min: float = float(profile.get("current_min_ma", 4.0))
     current_max: float = float(profile.get("current_max_ma", 20.0))
     level_min: float = float(profile.get("level_min_m", 0.0))
-    level_max: float = float(profile.get("level_max_m", 6.0))
+    level_max: float = float(profile.get("level_max_m", 4.0))
 
     if current_ma < fault_below:
         return None, None, "undercurrent"

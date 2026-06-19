@@ -29,3 +29,11 @@ export const DEVICE_COLORS: string[] = [
   '262 83% 58%', // roxo
   '199 89% 48%', // ciano
 ];
+
+// Paleta do dashboard do hospital, estilo Clima:
+// linha 1 = azul da marca, linha 2 = âmbar (accent). HistoryChart aplica como
+// `hsl(<valor>)`, então tanto 'var(--x)' quanto triplets HSL funcionam.
+export const CHART_COLORS: string[] = [
+  'var(--primary)',  // Grupo 1 — azul da marca
+  'var(--accent)',   // Grupo 2 — âmbar (cor nova)
+];

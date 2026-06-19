@@ -81,6 +81,20 @@ _SQL_SERIES = text("""
     ORDER BY dm.device_id, dm.metric_name, dm.derived_at_utc ASC
 """)
 
+# Pico de level_m por device nos últimos 30 dias = referência de 100% de enchimento.
+# Janela fixa (independente do parâmetro `hours` da rota). Usa level_m (não current_ma)
+# porque level_m só é gravado quando a corrente está na faixa válida → exclui spikes de
+# undercurrent/overrange automaticamente.
+_SQL_PEAK_LEVEL_30D = text("""
+    SELECT dm.device_id, MAX(dm.value) AS peak_level_m
+    FROM derived_metrics dm
+    WHERE dm.device_id = ANY(:device_ids)
+      AND dm.metric_name = 'level_m'
+      AND dm.value IS NOT NULL
+      AND dm.derived_at_utc >= now() - INTERVAL '30 days'
+    GROUP BY dm.device_id
+""")
+
 # Topology: estado por device registrado na instalação (mantido)
 _SQL_TOPOLOGY = text("""
     SELECT
@@ -205,6 +219,17 @@ def _epoch_ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
 
 
+def _fill_pct(level_m: Optional[float], peak_level_m: Optional[float]) -> Optional[float]:
+    """% de enchimento relativa ao pico de nível dos últimos 30 dias (100% = pico).
+
+    Retorna None quando não há leitura de nível ou pico válido — o chamador faz
+    fallback para o level_pct armazenado (escala do sensor).
+    """
+    if level_m is None or peak_level_m is None or peak_level_m <= 0:
+        return None
+    return max(0.0, min(100.0, level_m / peak_level_m * 100.0))
+
+
 async def _find_installation(db, slug: str):
     """Busca instalação usando apenas colunas existentes no schema atual."""
     from types import SimpleNamespace
@@ -302,6 +327,17 @@ async def get_dashboard(
             DashSeriesPoint(t=_epoch_ms(ts), v=float(value))
         )
 
+    # Pico de level_m por device (30 d) — referência de 100% de enchimento.
+    peak_rows = (await db.execute(
+        _SQL_PEAK_LEVEL_30D,
+        {"device_ids": device_ids},
+    )).fetchall()
+    peak_by_device: dict[int, float] = {
+        device_id: float(peak)
+        for device_id, peak in peak_rows
+        if peak is not None
+    }
+
     now = datetime.now(timezone.utc)
     devices: list[DashDevice] = []
     overall_last_seen: Optional[datetime] = None
@@ -320,6 +356,26 @@ async def get_dashboard(
             overall_last_seen = last_seen
 
         lm = latest_by_device.get(r.device_id, {})
+        dev_series = series_by_device.get(r.device_id, {})
+        peak = peak_by_device.get(r.device_id)
+
+        # level_pct passa a ser % de enchimento vs pico de 30 d (100% = pico).
+        # Fallback ao level_pct armazenado (escala do sensor) quando não há pico.
+        fill_latest = _fill_pct(lm.get("level_m"), peak)
+        level_pct_latest = fill_latest if fill_latest is not None else lm.get("level_pct")
+
+        level_m_series = dev_series.get("level_m", [])
+        if peak and peak > 0 and level_m_series:
+            level_pct_series = [
+                DashSeriesPoint(t=p.t, v=max(0.0, min(100.0, p.v / peak * 100.0)))
+                for p in level_m_series
+            ]
+        else:
+            level_pct_series = dev_series.get("level_pct", [])
+
+        series_out = {m: dev_series.get(m, []) for m in _SERIES_METRICS}
+        series_out["level_pct"] = level_pct_series
+
         devices.append(DashDevice(
             device_id=r.device_id,
             imei=r.imei,
@@ -329,14 +385,14 @@ async def get_dashboard(
             last_seen_utc=_ts_z(last_seen) if last_seen else None,
             active=is_active,
             latest=DashDeviceLatest(
-                level_pct=lm.get("level_pct"),
+                level_pct=level_pct_latest,
                 level_m=lm.get("level_m"),
                 current_ma=lm.get("current_ma"),
                 battery_v=lm.get("battery_v"),
                 signal=lm.get("signal"),
                 voltage_v=lm.get("voltage_v"),
             ),
-            series={m: series_by_device.get(r.device_id, {}).get(m, []) for m in _SERIES_METRICS},
+            series=series_out,
         ))
 
     return InstallationDashboardResponse(
