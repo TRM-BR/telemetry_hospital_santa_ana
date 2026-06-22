@@ -34,16 +34,17 @@ function fmtLiters(l: number | null | undefined): string {
   return `${Math.round(l).toLocaleString('pt-BR')} L`;
 }
 
-function fmtAltura(nivel: number | null | undefined, ref: number): string {
+// Altura real da coluna de água medida pelo sensor (nivel_m), formato pt-BR.
+function fmtAltura(nivel: number | null | undefined): string {
   if (nivel == null) return '—';
-  return `${nivel.toFixed(3)} m / ${ref.toFixed(3)} m`;
+  return `${nivel.toFixed(3).replace('.', ',')} m`;
 }
 
 // ── consumo derivado de flow_consumo_lph ─────────────────────────────────────
 
 interface Consumption {
-  taxaAtual: number | null;    // L/h
-  taxaMedia: number | null;    // L/h
+  taxaAtual: number | null;    // L/h (último ponto)
+  taxaMedia: number | null;    // L/h (média da janela)
   autonomiaDias: number | null;
   tendencia: 'consumindo' | 'enchendo' | 'estável';
 }
@@ -55,9 +56,10 @@ function deriveConsumption(series: SeriesPoint[], volumeL: number | null | undef
   const taxaAtual = series[series.length - 1].v;
   const taxaMedia = series.reduce((s, p) => s + p.v, 0) / series.length;
 
+  // Autonomia usa o consumo MÉDIO da janela (mais estável que o ponto instantâneo).
   const autonomiaDias =
-    taxaAtual > 0.1 && volumeL != null && volumeL > 0
-      ? volumeL / taxaAtual / 24
+    taxaMedia > 0.1 && volumeL != null && volumeL > 0
+      ? volumeL / taxaMedia / 24
       : null;
 
   // flow_consumo_lph é consumo retificado (≥0): 0 = estável/enchendo
@@ -74,9 +76,9 @@ function fmtLph(r: number | null): string {
 }
 
 function fmtDias(d: number | null): string {
-  if (d == null) return '∞';
+  if (d == null) return '0 dias';
   if (d > 365) return '>1 ano';
-  return `${d.toFixed(1)} dias`;
+  return `${d.toFixed(1).replace('.', ',')} dias`;
 }
 
 // ── estado ────────────────────────────────────────────────────────────────────
@@ -91,12 +93,19 @@ function getEstado(pct: number | null | undefined): EstadoKey {
   return 'Confortável';
 }
 
-const ESTADO_TONE: Record<EstadoKey, string> = {
-  'Confortável': 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30',
-  'Moderado':    'bg-blue-500/10 text-blue-600 border-blue-500/30',
-  'Alto':        'bg-accent/15 text-accent-foreground border-accent/40',
-  'Crítico':     'bg-destructive/10 text-destructive border-destructive/40',
-  'Sem leitura': 'bg-muted text-muted-foreground border-border',
+type StatTone = 'normal' | 'amber' | 'red';
+
+function autonomiaTone(d: number | null): StatTone {
+  if (d == null) return 'normal';
+  if (d <= 2) return 'red';
+  if (d <= 7) return 'amber';
+  return 'normal';
+}
+
+const STAT_TONE: Record<StatTone, string> = {
+  normal: 'text-foreground',
+  amber:  'text-amber-600',
+  red:    'text-destructive',
 };
 
 // ── chips de status ───────────────────────────────────────────────────────────
@@ -109,7 +118,7 @@ interface ChipDef {
 function buildChips(estado: EstadoKey, cons: Consumption): ChipDef[] {
   const chips: ChipDef[] = [];
 
-  // Nível
+  // Nível (indicador de estado — único, sem badge duplicado)
   if (estado === 'Confortável') chips.push({ label: 'Nível: confortável', tone: 'green' });
   else if (estado === 'Moderado') chips.push({ label: 'Nível: moderado', tone: 'blue' });
   else if (estado === 'Alto') chips.push({ label: 'Nível: alto', tone: 'amber' });
@@ -147,11 +156,22 @@ const CHIP_CLASS: Record<ChipDef['tone'], string> = {
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
-function Mini({ label, value }: { label: string; value: string }) {
+function StatSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-border p-3">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground leading-tight">{label}</p>
-      <p className="mt-1.5 text-sm font-bold text-foreground tabular-nums">{value}</p>
+    <div>
+      <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-medium mb-1">
+        {title}
+      </p>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function StatRow({ label, value, tone = 'normal' }: { label: string; value: string; tone?: StatTone }) {
+  return (
+    <div className="flex items-baseline justify-between py-1">
+      <span className="text-[13px] text-muted-foreground">{label}</span>
+      <span className={cn('text-sm font-bold tabular-nums', STAT_TONE[tone])}>{value}</span>
     </div>
   );
 }
@@ -174,20 +194,16 @@ export interface LevelGaugeCardProps {
   groupIndex: number;
 }
 
-// Altura útil de referência padrão (Fortlev 10.000 L) — usado se a API não retornar
-const HEIGHT_REF_DEFAULT = 1.648;
-
 export function LevelGaugeCard({ device, groupIndex }: LevelGaugeCardProps) {
-  const pct     = device.latest.level_pct ?? 0;
+  const pct      = device.latest.level_pct ?? 0;
   const animated = useCountUp(pct);
-  const estado  = getEstado(device.latest.level_pct);
+  const estado   = getEstado(device.latest.level_pct);
 
   const flowSeries: SeriesPoint[] = device.series?.['flow_consumo_lph'] ?? [];
-  const cons = deriveConsumption(flowSeries, device.latest.volume_l);
+  const cons  = deriveConsumption(flowSeries, device.latest.volume_l);
   const chips = buildChips(estado, cons);
 
   const nivel = device.latest.nivel_m ?? device.latest.level_m;
-  const heightRef = HEIGHT_REF_DEFAULT;
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in">
@@ -205,43 +221,53 @@ export function LevelGaugeCard({ device, groupIndex }: LevelGaugeCardProps) {
         </p>
       </div>
 
-      {/* Body: gauge + análise */}
-      <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-6 items-center">
-        {/* Esquerda: gauge + % + estado */}
-        <div className="flex items-center gap-4">
-          <ReservoirGauge level={pct} />
-          <div>
-            <p className="text-4xl font-bold tabular-nums text-foreground">
-              {device.latest.level_pct == null ? '—' : animated.toFixed(1)}
-              <span className="text-xl font-medium text-muted-foreground">%</span>
-            </p>
-            <span className={cn(
-              'mt-2 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider',
-              ESTADO_TONE[estado],
-            )}>
-              <span className="h-1.5 w-1.5 rounded-full bg-current" />
-              Estado: {estado}
-            </span>
+      {/* Body: gauge+chips | stat-list */}
+      <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-6 items-start">
+        {/* Esquerda: gauge + % + altura + chips empilhados */}
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-4">
+            <ReservoirGauge level={pct} />
+            <div>
+              <p className="text-4xl font-bold tabular-nums text-foreground leading-none">
+                {device.latest.level_pct == null ? '—' : animated.toFixed(1)}
+                <span className="text-xl font-medium text-muted-foreground">%</span>
+              </p>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Coluna de água:{' '}
+                <span className="text-foreground font-semibold tabular-nums">{fmtAltura(nivel)}</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Chips abaixo do desenho */}
+          <div className="flex flex-col gap-1.5 items-start">
+            {chips.map((c, i) => <StatusChip key={i} {...c} />)}
           </div>
         </div>
 
-        {/* Direita: análise de consumo */}
+        {/* Direita: stat-list por seção semântica */}
         <div className="space-y-3">
-          <div>
-            <p className="text-xs font-semibold text-foreground">Análise de Consumo</p>
-            <p className="text-[11px] text-muted-foreground">Indicadores de desempenho</p>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <Mini label="Autonomia"             value={fmtDias(cons.autonomiaDias)} />
-            <Mini label="Consumo médio (janela)" value={fmtLph(cons.taxaMedia)} />
-            <Mini label="Consumo atual"          value={fmtLph(cons.taxaAtual)} />
-            <Mini label="Volume (grupo)"         value={fmtLiters(device.latest.volume_l)} />
-            <Mini label="Faltante (grupo)"       value={fmtLiters(device.latest.faltante_l)} />
-            <Mini label="Altura"                 value={fmtAltura(nivel, heightRef)} />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {chips.map((c, i) => <StatusChip key={i} {...c} />)}
-          </div>
+          <StatSection title="Reservatório">
+            <StatRow label="Volume (grupo)"   value={fmtLiters(device.latest.volume_l)} />
+            <StatRow label="Faltante (grupo)" value={fmtLiters(device.latest.faltante_l)} />
+          </StatSection>
+
+          <div className="border-t border-border" />
+
+          <StatSection title="Consumo">
+            <StatRow label="Atual"          value={fmtLph(cons.taxaAtual)} />
+            <StatRow label="Médio (janela)" value={fmtLph(cons.taxaMedia)} />
+          </StatSection>
+
+          <div className="border-t border-border" />
+
+          <StatSection title="Operação">
+            <StatRow
+              label="Autonomia"
+              value={fmtDias(cons.autonomiaDias)}
+              tone={autonomiaTone(cons.autonomiaDias)}
+            />
+          </StatSection>
         </div>
       </div>
     </div>
