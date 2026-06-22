@@ -5,8 +5,10 @@
 Somente dados reais: level_pct, level_m, current_ma, battery_v, signal, voltage_v.
 Sem pressão/vazão/consumo — hardware analógico não os produz.
 
-Acesso público (sem auth), como /health: o frontend do hospital usa login mock
-(sem JWT real). Reavaliar quando houver autenticação real ponta a ponta.
+level_pct / percentual retornados são NOMINAIS (base altura_util 1,648 m), não escala do sensor.
+sensor_level_pct = campo técnico (% escala 0–4 m), não usado como headline.
+
+Acesso público (sem auth), como /health.
 """
 from __future__ import annotations
 
@@ -15,39 +17,26 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import DbDep
-from app.db.models.installation import Installation
 from app.processing.derivations import flow_from_level
+from app.processing.derivations import reservoir as res_calc
+from app.services import reservoir_config
 
 router = APIRouter(tags=["dashboard"])
 
-# Métricas reais disponíveis para o hospital (analógico)
 _LATEST_METRICS = ("level_pct", "level_m", "current_ma", "battery_v", "signal", "voltage_v")
 _SERIES_METRICS = ("level_pct", "level_m", "current_ma", "battery_v", "signal", "voltage_v")
-# Device considerado "ativo" se reportou nos últimos N minutos
 _ACTIVE_WINDOW_MIN = 60
-
-# Capacidade total por grupo: 4 caixas × 10.000 L = 40.000 L.
-# Para override por device no futuro: trocar por dict[device_id, float] ou puxar de config.
-_TANK_CAPACITY_L = 40_000.0
-
-# Estimativa de "cheio operacional" = referência de 100% do fill% do dashboard.
-# p90 dos máximos diários de level_m em 30 d, por device. NÃO confundir com o level_pct
-# GRAVADO em derived_metrics, que é a escala bruta do sensor (ratio 4–20 mA) e alimenta
-# alertas/baseline. Esta referência é calculada só em read-time e nunca é persistida.
-_FULL_ESTIMATE_TZ = "America/Sao_Paulo"   # dia operacional no fuso do tenant
-_FULL_PCTL = 0.9                          # p90 dos máximos diários
-_FULL_MIN_DAYS_HIGH = 10                  # ≥ → confiança "high"; 1..9 → "low"; 0 → fallback
+_FULL_ESTIMATE_TZ = "America/Sao_Paulo"
 
 
 # ---------------------------------------------------------------------------
 # SQL
 # ---------------------------------------------------------------------------
 
-# Devices vinculados à instalação (vínculo ativo) + última coleta
 _SQL_DEVICES = text("""
     SELECT
         d.id     AS device_id,
@@ -67,7 +56,6 @@ _SQL_DEVICES = text("""
     ORDER BY d.id
 """)
 
-# Última leitura por (device, metric) — DISTINCT ON evita colapsar devices/grupos
 _SQL_LATEST = text("""
     SELECT DISTINCT ON (dm.device_id, dm.metric_name)
         dm.device_id,
@@ -80,7 +68,6 @@ _SQL_LATEST = text("""
     ORDER BY dm.device_id, dm.metric_name, dm.derived_at_utc DESC
 """)
 
-# Série temporal por device nas últimas N horas
 _SQL_SERIES = text("""
     SELECT
         dm.device_id,
@@ -94,33 +81,6 @@ _SQL_SERIES = text("""
     ORDER BY dm.device_id, dm.metric_name, dm.derived_at_utc ASC
 """)
 
-# Cheio operacional estimado por device (30 d) — referência de 100% do fill% do dashboard.
-# Lógica: MAX diário de level_m por dia operacional (fuso tenant), depois p90 desses picos.
-# Uma passada retorna percentil, máximo e contagem de dias; Python decide o tier.
-# Janela fixa (independente do parâmetro `hours` da rota).
-_SQL_FULL_LEVEL_30D = text("""
-    WITH daily AS (
-        SELECT
-            dm.device_id,
-            (dm.derived_at_utc AT TIME ZONE :tz)::date AS day,
-            MAX(dm.value)                              AS day_max
-        FROM derived_metrics dm
-        WHERE dm.device_id = ANY(:device_ids)
-          AND dm.metric_name = 'level_m'
-          AND dm.value IS NOT NULL
-          AND dm.derived_at_utc >= now() - INTERVAL '30 days'
-        GROUP BY dm.device_id, day
-    )
-    SELECT
-        device_id,
-        percentile_cont(CAST(:pctl AS double precision)) WITHIN GROUP (ORDER BY day_max) AS pctl_level_m,
-        MAX(day_max)                                                                      AS top_day_m,
-        count(*)                                                                          AS day_count
-    FROM daily
-    GROUP BY device_id
-""")
-
-# Topology: estado por device registrado na instalação (mantido)
 _SQL_TOPOLOGY = text("""
     SELECT
         d.id        AS device_id,
@@ -167,17 +127,31 @@ _SQL_TOPOLOGY = text("""
 # ---------------------------------------------------------------------------
 
 class DashSeriesPoint(BaseModel):
-    t: int          # epoch ms (UTC)
+    t: int
     v: float
 
 
 class DashDeviceLatest(BaseModel):
-    level_pct: Optional[float] = None
+    # Escala nominal (headline)
+    level_pct: Optional[float] = None       # alias de percentual (compat)
     level_m: Optional[float] = None
     current_ma: Optional[float] = None
     battery_v: Optional[float] = None
     signal: Optional[float] = None
     voltage_v: Optional[float] = None
+    # Campos explícitos nominais
+    nivel_m: Optional[float] = None
+    percentual: Optional[float] = None
+    volume_tank_l: Optional[float] = None
+    volume_group_l: Optional[float] = None
+    faltante_tank_l: Optional[float] = None
+    faltante_group_l: Optional[float] = None
+    altura_faltante_m: Optional[float] = None
+    # Compat
+    volume_l: Optional[float] = None       # = volume_group_l
+    faltante_l: Optional[float] = None     # = faltante_group_l
+    # Campo técnico (escala bruta do sensor 0–4 m, diagnóstico)
+    sensor_level_pct: Optional[float] = None
 
 
 class DashDevice(BaseModel):
@@ -189,13 +163,10 @@ class DashDevice(BaseModel):
     last_seen_utc: Optional[str]
     active: bool
     latest: DashDeviceLatest
-    # séries por métrica: level_pct, level_m, current_ma
     series: dict[str, list[DashSeriesPoint]]
-    # referência de 100% operacional (cheio estimado, read-time, não persistido)
-    fill_reference_m: Optional[float] = None
-    fill_reference_source: str = "none"       # estimated_daily_max_p90 | provisional_p90 | provisional_observed_max | none
-    fill_reference_confidence: str = "none"   # high | low | none
-    fill_reference_day_count: int = 0
+    group_name: Optional[str] = None
+    group_capacity_l: Optional[float] = None
+    tank_count: Optional[int] = None
 
 
 class InstallationDashboardResponse(BaseModel):
@@ -206,6 +177,9 @@ class InstallationDashboardResponse(BaseModel):
     device_count: int
     active_count: int
     devices: list[DashDevice]
+    volume_total_l: float = 0.0
+    faltante_total_l: float = 0.0
+    capacidade_total_l: float = 0.0
 
 
 class DeviceTopology(BaseModel):
@@ -249,42 +223,8 @@ def _epoch_ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
 
 
-def _fill_pct(level_m: Optional[float], ref_m: Optional[float]) -> Optional[float]:
-    """% de enchimento relativa ao cheio operacional estimado (100% = ref_m).
-
-    Retorna None quando não há leitura de nível ou referência válida — o chamador faz
-    fallback para o level_pct armazenado (escala do sensor, 0–100% de 4–20 mA).
-    """
-    if level_m is None or ref_m is None or ref_m <= 0:
-        return None
-    return max(0.0, min(100.0, level_m / ref_m * 100.0))
-
-
-def _full_ref(
-    pctl_m: Optional[float],
-    top_m: Optional[float],
-    n: Optional[int],
-) -> tuple[Optional[float], str, str, int]:
-    """Cheio operacional estimado por device. Retorna (reference_m, source, confidence, day_count).
-
-    reference_m None → chamador usa fallback level_pct gravado (escala do sensor).
-    """
-    n = int(n or 0)
-    if n <= 0:
-        return None, "none", "none", 0
-    if n >= _FULL_MIN_DAYS_HIGH and pctl_m and pctl_m > 0:
-        return float(pctl_m), "estimated_daily_max_p90", "high", n
-    if n >= 3 and pctl_m and pctl_m > 0:
-        return float(pctl_m), "provisional_p90", "low", n
-    if top_m and top_m > 0:   # 1–2 dias: p90 instável, usa MAX
-        return float(top_m), "provisional_observed_max", "low", n
-    return None, "none", "none", n
-
-
 async def _find_installation(db, slug: str):
-    """Busca instalação usando apenas colunas existentes no schema atual."""
     from types import SimpleNamespace
-    from sqlalchemy import text
 
     raw = (slug or "").strip()
     candidates = []
@@ -306,16 +246,8 @@ async def _find_installation(db, slug: str):
         result = await db.execute(
             text("""
                 SELECT
-                    id,
-                    slug,
-                    name,
-                    lat,
-                    lng,
-                    group_name,
-                    is_active,
-                    notes,
-                    created_at,
-                    updated_at
+                    id, slug, name, lat, lng,
+                    group_name, is_active, notes, created_at, updated_at
                 FROM installations
                 WHERE slug = :slug
                 LIMIT 1
@@ -330,6 +262,10 @@ async def _find_installation(db, slug: str):
 
     return None
 
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @router.get("/installations/{slug}/dashboard", response_model=InstallationDashboardResponse)
 async def get_dashboard(
@@ -378,22 +314,19 @@ async def get_dashboard(
             DashSeriesPoint(t=_epoch_ms(ts), v=float(value))
         )
 
-    # Cheio operacional estimado por device (30 d) — referência de 100% do fill% do dashboard.
-    full_rows = (await db.execute(
-        _SQL_FULL_LEVEL_30D,
-        {"device_ids": device_ids, "tz": _FULL_ESTIMATE_TZ, "pctl": _FULL_PCTL},
-    )).fetchall()
-    full_by_device: dict[int, tuple] = {
-        device_id: _full_ref(pctl_m, top_m, day_count)
-        for device_id, pctl_m, top_m, day_count in full_rows
-    }
+    # Config de reservatório por grupo (resiliente — fallback se tabela não existir)
+    groups = await reservoir_config.load_groups(db, inst.id)
 
     now = datetime.now(timezone.utc)
     devices: list[DashDevice] = []
     overall_last_seen: Optional[datetime] = None
     active_count = 0
 
-    for r in device_rows:
+    # Acumuladores para totais por grupo distinto (sem dupla contagem)
+    # group_key → {"cfg": ReservoirConfig, "tank_pcts": list[float]}
+    group_aggregates: dict[str, dict] = {}
+
+    for i, r in enumerate(device_rows):
         last_seen: Optional[datetime] = r.last_seen_utc
         is_active = (
             last_seen is not None
@@ -407,19 +340,26 @@ async def get_dashboard(
 
         lm = latest_by_device.get(r.device_id, {})
         dev_series = series_by_device.get(r.device_id, {})
-        ref_m, ref_source, ref_conf, ref_days = full_by_device.get(
-            r.device_id, (None, "none", "none", 0)
-        )
 
-        # fill% do dashboard = level_m / cheio_operacional × 100 (escala operacional, read-time).
-        # Fallback ao level_pct gravado (escala do sensor 4–20 mA) quando sem referência.
-        fill_latest = _fill_pct(lm.get("level_m"), ref_m)
-        level_pct_latest = fill_latest if fill_latest is not None else lm.get("level_pct")
+        # Resolver config do grupo para este device (por índice de posição; post-migration: por FK)
+        cfg = reservoir_config.resolve_device_cfg(None, groups, i)
 
+        # Campo técnico: % bruta da escala do sensor (0–4 m), gravada em derived_metrics
+        sensor_level_pct_latest = lm.get("level_pct")
+
+        # Cálculo nominal a partir de level_m
+        level_m_latest = lm.get("level_m")
+        ro = res_calc.readout(level_m_latest, cfg) if level_m_latest is not None else None
+
+        # level_pct do dashboard = percentual nominal (substitui p90)
+        percentual_latest = ro["percentual"] if ro else None
+        level_pct_latest = percentual_latest
+
+        # Série level_pct nominal derivada de level_m
         level_m_series = dev_series.get("level_m", [])
-        if ref_m and ref_m > 0 and level_m_series:
+        if level_m_series:
             level_pct_series = [
-                DashSeriesPoint(t=p.t, v=max(0.0, min(100.0, p.v / ref_m * 100.0)))
+                DashSeriesPoint(t=p.t, v=res_calc.tank_percent(p.v, cfg))
                 for p in level_m_series
             ]
         else:
@@ -428,20 +368,30 @@ async def get_dashboard(
         series_out = {m: dev_series.get(m, []) for m in _SERIES_METRICS}
         series_out["level_pct"] = level_pct_series
 
-        # Vazão líquida derivada de nível — read-time, nunca persistida.
-        # flow_net_lph: janela 1h deslizante → gráfico de linha
-        # flow_hourly_lph: diff por balde horário → gráfico de barras
-        # Magnitude aproximada com histórico < 3 dias (level_pct na escala bruta do sensor).
+        # Vazão derivada de nível nominal — L/h reais do grupo
         if level_pct_series:
             _pts = [(p.t, p.v) for p in level_pct_series]
             series_out["flow_consumo_lph"] = [
                 DashSeriesPoint(t=t, v=v)
-                for t, v in flow_from_level.consumption_series(_pts, _TANK_CAPACITY_L)
+                for t, v in flow_from_level.consumption_series(_pts, cfg.group_capacity_l)
             ]
             series_out["flow_hourly_lph"] = [
                 DashSeriesPoint(t=t, v=v)
-                for t, v in flow_from_level.net_flow_hourly(_pts, _TANK_CAPACITY_L, _FULL_ESTIMATE_TZ)
+                for t, v in flow_from_level.net_flow_hourly(_pts, cfg.group_capacity_l, _FULL_ESTIMATE_TZ)
             ]
+
+        # Acumulação para totais por grupo distinto
+        # Antes da migration: cada device = grupo único por índice
+        group_key = f"idx_{i}"
+        if group_key not in group_aggregates:
+            group_aggregates[group_key] = {"cfg": cfg, "tank_pcts": []}
+        if ro is not None:
+            group_aggregates[group_key]["tank_pcts"].append(ro["percentual"])
+
+        # group_name do grupo resolvido (se disponível)
+        resolved_group_name: Optional[str] = None
+        if i < len(groups):
+            resolved_group_name = groups[i].get("group_name")
 
         devices.append(DashDevice(
             device_id=r.device_id,
@@ -453,18 +403,43 @@ async def get_dashboard(
             active=is_active,
             latest=DashDeviceLatest(
                 level_pct=level_pct_latest,
-                level_m=lm.get("level_m"),
+                level_m=level_m_latest,
                 current_ma=lm.get("current_ma"),
                 battery_v=lm.get("battery_v"),
                 signal=lm.get("signal"),
                 voltage_v=lm.get("voltage_v"),
+                nivel_m=ro["nivel_m"] if ro else None,
+                percentual=percentual_latest,
+                volume_tank_l=ro["volume_tank_l"] if ro else None,
+                volume_group_l=ro["volume_group_l"] if ro else None,
+                faltante_tank_l=ro["faltante_tank_l"] if ro else None,
+                faltante_group_l=ro["faltante_group_l"] if ro else None,
+                altura_faltante_m=ro["altura_faltante_m"] if ro else None,
+                volume_l=ro["volume_group_l"] if ro else None,
+                faltante_l=ro["faltante_group_l"] if ro else None,
+                sensor_level_pct=sensor_level_pct_latest,
             ),
             series=series_out,
-            fill_reference_m=ref_m,
-            fill_reference_source=ref_source,
-            fill_reference_confidence=ref_conf,
-            fill_reference_day_count=ref_days,
+            group_name=resolved_group_name,
+            group_capacity_l=cfg.group_capacity_l,
+            tank_count=cfg.tank_count,
         ))
+
+    # Totais por grupo distinto (sem dupla contagem)
+    volume_total_l = 0.0
+    faltante_total_l = 0.0
+    capacidade_total_l = 0.0
+    for gagg in group_aggregates.values():
+        cfg_g = gagg["cfg"]
+        tank_pcts = gagg["tank_pcts"]
+        if not tank_pcts:
+            continue
+        # Caixas equalizadas: média dos tank_percent dos sensores do grupo
+        avg_pct = sum(tank_pcts) / len(tank_pcts)
+        g_vol = max(0.0, min(cfg_g.group_capacity_l, avg_pct / 100.0 * cfg_g.group_capacity_l))
+        volume_total_l += g_vol
+        faltante_total_l += cfg_g.group_capacity_l - g_vol
+        capacidade_total_l += cfg_g.group_capacity_l
 
     return InstallationDashboardResponse(
         installation_slug=inst.slug,
@@ -474,6 +449,9 @@ async def get_dashboard(
         device_count=len(devices),
         active_count=active_count,
         devices=devices,
+        volume_total_l=round(volume_total_l, 1),
+        faltante_total_l=round(faltante_total_l, 1),
+        capacidade_total_l=round(capacidade_total_l, 1),
     )
 
 
