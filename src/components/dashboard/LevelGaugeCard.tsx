@@ -29,38 +29,48 @@ function fmtDt(iso: string | null): string {
   return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
 }
 
-// Derivação de consumo a partir da série level_m
-interface Consumption {
-  taxaAtual: number | null;   // m/h positivo = caindo
-  taxaMedia: number | null;
-  autonomiaDias: number | null;
+function fmtLiters(l: number | null | undefined): string {
+  if (l == null) return '—';
+  return `${Math.round(l).toLocaleString('pt-BR')} L`;
 }
 
-function deriveConsumption(pts: SeriesPoint[]): Consumption {
-  if (pts.length < 2) return { taxaAtual: null, taxaMedia: null, autonomiaDias: null };
+function fmtAltura(nivel: number | null | undefined, ref: number): string {
+  if (nivel == null) return '—';
+  return `${nivel.toFixed(3)} m / ${ref.toFixed(3)} m`;
+}
 
-  const first = pts[0];
-  const last  = pts[pts.length - 1];
-  const dtTotal = (last.t - first.t) / 3_600_000;
-  const taxaMedia = dtTotal > 0 ? (first.v - last.v) / dtTotal : null;
+// ── consumo derivado de flow_consumo_lph ─────────────────────────────────────
 
-  const recentN = Math.max(3, Math.floor(pts.length * 0.1));
-  const recent  = pts.slice(-recentN);
-  const dtRecent = (recent[recent.length - 1].t - recent[0].t) / 3_600_000;
-  const taxaAtual = dtRecent > 0 ? (recent[0].v - recent[recent.length - 1].v) / dtRecent : null;
+interface Consumption {
+  taxaAtual: number | null;    // L/h
+  taxaMedia: number | null;    // L/h
+  autonomiaDias: number | null;
+  tendencia: 'consumindo' | 'enchendo' | 'estável';
+}
 
-  const currentLevel = last.v;
+function deriveConsumption(series: SeriesPoint[], volumeL: number | null | undefined): Consumption {
+  const neutral: Consumption = { taxaAtual: null, taxaMedia: null, autonomiaDias: null, tendencia: 'estável' };
+  if (series.length === 0) return neutral;
+
+  const taxaAtual = series[series.length - 1].v;
+  const taxaMedia = series.reduce((s, p) => s + p.v, 0) / series.length;
+
   const autonomiaDias =
-    taxaAtual != null && taxaAtual > 0.001
-      ? (currentLevel / taxaAtual) / 24
+    taxaAtual > 0.1 && volumeL != null && volumeL > 0
+      ? volumeL / taxaAtual / 24
       : null;
 
-  return { taxaAtual, taxaMedia, autonomiaDias };
+  // flow_consumo_lph é consumo retificado (≥0): 0 = estável/enchendo
+  const tendencia: Consumption['tendencia'] =
+    taxaAtual > 0.1 ? 'consumindo' : 'estável';
+
+  return { taxaAtual, taxaMedia, autonomiaDias, tendencia };
 }
 
-function fmtRate(r: number | null): string {
+function fmtLph(r: number | null): string {
   if (r == null) return '—';
-  return `${Math.abs(r).toFixed(3)} m/h`;
+  if (r < 0.1) return '0 L/h';
+  return `${Math.round(r).toLocaleString('pt-BR')} L/h`;
 }
 
 function fmtDias(d: number | null): string {
@@ -71,18 +81,20 @@ function fmtDias(d: number | null): string {
 
 // ── estado ────────────────────────────────────────────────────────────────────
 
-type EstadoKey = 'Confortável' | 'Atenção' | 'Crítico' | 'Sem leitura';
+type EstadoKey = 'Confortável' | 'Moderado' | 'Alto' | 'Crítico' | 'Sem leitura';
 
 function getEstado(pct: number | null | undefined): EstadoKey {
   if (pct == null) return 'Sem leitura';
-  if (pct >= 70) return 'Confortável';
-  if (pct >= 40) return 'Atenção';
-  return 'Crítico';
+  if (pct <= 10) return 'Crítico';
+  if (pct <= 15) return 'Alto';
+  if (pct <= 20) return 'Moderado';
+  return 'Confortável';
 }
 
 const ESTADO_TONE: Record<EstadoKey, string> = {
   'Confortável': 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30',
-  'Atenção':     'bg-accent/15 text-accent-foreground border-accent/40',
+  'Moderado':    'bg-blue-500/10 text-blue-600 border-blue-500/30',
+  'Alto':        'bg-accent/15 text-accent-foreground border-accent/40',
   'Crítico':     'bg-destructive/10 text-destructive border-destructive/40',
   'Sem leitura': 'bg-muted text-muted-foreground border-border',
 };
@@ -91,7 +103,7 @@ const ESTADO_TONE: Record<EstadoKey, string> = {
 
 interface ChipDef {
   label: string;
-  tone: 'green' | 'amber' | 'red' | 'neutral';
+  tone: 'green' | 'blue' | 'amber' | 'red' | 'neutral';
 }
 
 function buildChips(estado: EstadoKey, cons: Consumption): ChipDef[] {
@@ -99,7 +111,8 @@ function buildChips(estado: EstadoKey, cons: Consumption): ChipDef[] {
 
   // Nível
   if (estado === 'Confortável') chips.push({ label: 'Nível: confortável', tone: 'green' });
-  else if (estado === 'Atenção') chips.push({ label: 'Nível: atenção', tone: 'amber' });
+  else if (estado === 'Moderado') chips.push({ label: 'Nível: moderado', tone: 'blue' });
+  else if (estado === 'Alto') chips.push({ label: 'Nível: alto', tone: 'amber' });
   else if (estado === 'Crítico') chips.push({ label: 'Nível: crítico', tone: 'red' });
   else chips.push({ label: 'Sem leitura', tone: 'neutral' });
 
@@ -115,13 +128,10 @@ function buildChips(estado: EstadoKey, cons: Consumption): ChipDef[] {
   }
 
   // Tendência
-  const taxa = cons.taxaAtual;
-  if (taxa == null || Math.abs(taxa) < 0.001) {
-    chips.push({ label: 'Grupo: estável', tone: 'green' });
-  } else if (taxa > 0) {
+  if (cons.tendencia === 'consumindo') {
     chips.push({ label: 'Tendência: consumindo', tone: 'neutral' });
   } else {
-    chips.push({ label: 'Tendência: enchendo', tone: 'green' });
+    chips.push({ label: 'Grupo: estável', tone: 'green' });
   }
 
   return chips;
@@ -129,6 +139,7 @@ function buildChips(estado: EstadoKey, cons: Consumption): ChipDef[] {
 
 const CHIP_CLASS: Record<ChipDef['tone'], string> = {
   green:   'bg-emerald-500/10 border-emerald-500/25 text-emerald-700',
+  blue:    'bg-blue-500/10 border-blue-500/25 text-blue-700',
   amber:   'bg-amber-500/10 border-amber-500/25 text-amber-700',
   red:     'bg-destructive/10 border-destructive/30 text-destructive',
   neutral: 'bg-secondary border-border text-muted-foreground',
@@ -163,14 +174,20 @@ export interface LevelGaugeCardProps {
   groupIndex: number;
 }
 
+// Altura útil de referência padrão (Fortlev 10.000 L) — usado se a API não retornar
+const HEIGHT_REF_DEFAULT = 1.648;
+
 export function LevelGaugeCard({ device, groupIndex }: LevelGaugeCardProps) {
   const pct     = device.latest.level_pct ?? 0;
   const animated = useCountUp(pct);
   const estado  = getEstado(device.latest.level_pct);
 
-  const levelMSeries: SeriesPoint[] = device.series?.['level_m'] ?? [];
-  const cons = deriveConsumption(levelMSeries);
+  const flowSeries: SeriesPoint[] = device.series?.['flow_consumo_lph'] ?? [];
+  const cons = deriveConsumption(flowSeries, device.latest.volume_l);
   const chips = buildChips(estado, cons);
+
+  const nivel = device.latest.nivel_m ?? device.latest.level_m;
+  const heightRef = HEIGHT_REF_DEFAULT;
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in">
@@ -214,10 +231,13 @@ export function LevelGaugeCard({ device, groupIndex }: LevelGaugeCardProps) {
             <p className="text-xs font-semibold text-foreground">Análise de Consumo</p>
             <p className="text-[11px] text-muted-foreground">Indicadores de desempenho</p>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <Mini label="Autonomia"            value={fmtDias(cons.autonomiaDias)} />
-            <Mini label="Consumo médio (janela)" value={fmtRate(cons.taxaMedia)} />
-            <Mini label="Consumo atual"        value={fmtRate(cons.taxaAtual)} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <Mini label="Autonomia"             value={fmtDias(cons.autonomiaDias)} />
+            <Mini label="Consumo médio (janela)" value={fmtLph(cons.taxaMedia)} />
+            <Mini label="Consumo atual"          value={fmtLph(cons.taxaAtual)} />
+            <Mini label="Volume (grupo)"         value={fmtLiters(device.latest.volume_l)} />
+            <Mini label="Faltante (grupo)"       value={fmtLiters(device.latest.faltante_l)} />
+            <Mini label="Altura"                 value={fmtAltura(nivel, heightRef)} />
           </div>
           <div className="flex flex-wrap gap-2">
             {chips.map((c, i) => <StatusChip key={i} {...c} />)}

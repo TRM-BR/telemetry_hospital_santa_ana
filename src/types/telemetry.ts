@@ -79,21 +79,27 @@ export type FilterMode = 'janela' | 'periodo';
 // ── Respostas reais da API (/installations/{slug}/dashboard) ────────────────
 
 export interface DashDeviceLatest {
+  // Headline nominal (level_pct = percentual nominal, não escala do sensor)
   level_pct: number | null;
   level_m: number | null;
   current_ma: number | null;
   battery_v: number | null;
   signal: number | null;
   voltage_v: number | null;
+  // Campos explícitos nominais
+  nivel_m: number | null;
+  percentual: number | null;
+  volume_tank_l: number | null;
+  volume_group_l: number | null;
+  faltante_tank_l: number | null;
+  faltante_group_l: number | null;
+  altura_faltante_m: number | null;
+  // Compat
+  volume_l: number | null;       // = volume_group_l
+  faltante_l: number | null;     // = faltante_group_l
+  // Campo técnico: % da escala bruta do sensor (0–4 m), apenas diagnóstico
+  sensor_level_pct?: number | null;
 }
-
-export type FillReferenceSource =
-  | 'estimated_daily_max_p90'
-  | 'provisional_p90'
-  | 'provisional_observed_max'
-  | 'none';
-
-export type FillReferenceConfidence = 'high' | 'low' | 'none';
 
 export interface DashDevice {
   device_id: number;
@@ -104,13 +110,10 @@ export interface DashDevice {
   last_seen_utc: string | null;
   active: boolean;
   latest: DashDeviceLatest;
-  // séries por métrica: level_pct, level_m, current_ma
   series: Record<string, SeriesPoint[]>;
-  // referência de 100% operacional (cheio estimado, read-time, não persistido)
-  fill_reference_m: number | null;
-  fill_reference_source: FillReferenceSource;
-  fill_reference_confidence: FillReferenceConfidence;
-  fill_reference_day_count: number;
+  group_name?: string | null;
+  group_capacity_l?: number | null;
+  tank_count?: number | null;
 }
 
 export interface InstallationDashboardResponse {
@@ -121,4 +124,7 @@ export interface InstallationDashboardResponse {
   device_count: number;
   active_count: number;
   devices: DashDevice[];
+  volume_total_l: number;
+  faltante_total_l: number;
+  capacidade_total_l: number;
 }
