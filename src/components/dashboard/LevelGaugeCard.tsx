@@ -78,6 +78,7 @@ function fmtLph(r: number | null): string {
 function fmtDias(d: number | null): string {
   if (d == null) return '0 dias';
   if (d > 365) return '>1 ano';
+  if (d < 1) return `${Math.round(d * 24)} h`;
   return `${d.toFixed(1).replace('.', ',')} dias`;
 }
 
@@ -97,8 +98,8 @@ type StatTone = 'normal' | 'amber' | 'red';
 
 function autonomiaTone(d: number | null): StatTone {
   if (d == null) return 'normal';
-  if (d <= 2) return 'red';
-  if (d <= 7) return 'amber';
+  if (d <= 6 / 24) return 'red';
+  if (d <= 1)      return 'amber';
   return 'normal';
 }
 
@@ -128,9 +129,9 @@ function buildChips(estado: EstadoKey, cons: Consumption): ChipDef[] {
   // Autonomia
   if (cons.autonomiaDias == null) {
     chips.push({ label: 'Autonomia: estável', tone: 'green' });
-  } else if (cons.autonomiaDias > 7) {
+  } else if (cons.autonomiaDias > 1) {
     chips.push({ label: 'Autonomia: confortável', tone: 'green' });
-  } else if (cons.autonomiaDias > 2) {
+  } else if (cons.autonomiaDias > 6 / 24) {
     chips.push({ label: 'Autonomia: atenção', tone: 'amber' });
   } else {
     chips.push({ label: 'Autonomia: crítico', tone: 'red' });
