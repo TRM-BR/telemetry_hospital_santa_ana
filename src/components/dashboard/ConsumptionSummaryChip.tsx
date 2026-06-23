@@ -118,7 +118,7 @@ function ShiftStat({ tag, windowLabel, value, fill, active }: ShiftStatProps) {
 
   return (
     <div className="min-w-0 text-left">
-      <div className="mb-1.5 flex min-h-4 items-center gap-1.5">
+      <div className="mb-1 flex min-h-4 items-center gap-1.5">
         <span className={cn(
           'text-[10px] font-semibold uppercase tracking-[0.16em]',
           active ? 'text-primary' : 'text-muted-foreground',
@@ -135,12 +135,12 @@ function ShiftStat({ tag, windowLabel, value, fill, active }: ShiftStatProps) {
       <p className="truncate text-[10px] leading-none text-muted-foreground" title={windowLabel}>
         {windowLabel}
       </p>
-      <p className="mt-1 font-bold tabular-nums text-foreground text-[15px] leading-snug">
+      <p className="mt-0.5 font-bold tabular-nums text-foreground text-[15px] leading-snug">
         {formatM3(value)}
       </p>
 
       <div
-        className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary"
+        className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-secondary"
         title={TIME_PROGRESS_TITLE}
         role="progressbar"
         aria-label={`${tag}: ${TIME_PROGRESS_TITLE}`}
@@ -236,7 +236,7 @@ export function ConsumptionSummaryChip({
         onClick={handleToggleOpen}
         aria-expanded={open}
         className={cn(
-          'grid w-full grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-card px-3.5 py-2.5 text-sm transition-colors sm:w-[24rem]',
+          'grid w-full grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-card px-3.5 py-2 text-sm transition-colors sm:w-[24rem]',
           open
             ? 'border-primary/40 text-primary'
             : 'border-border text-foreground hover:border-primary/40 hover:text-primary',

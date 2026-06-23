@@ -42,12 +42,12 @@ export function FiltersBar(p: FiltersBarProps) {
         />
       )}
 
-      <div className="relative z-10 rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in">
-        <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">
+      <div className="relative z-10 rounded-2xl border border-border bg-card px-5 py-3 shadow-soft animate-drop-in">
+        <p className="mb-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
           Filtros de visualização
         </p>
 
-        <div className="flex flex-wrap items-end gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           {/* Switch janela/período */}
           <div>
             <p className="text-xs text-muted-foreground mb-2">Modo de filtro</p>
