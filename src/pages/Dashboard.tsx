@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Droplets } from 'lucide-react';
+import { api } from '../services/api';
 
 import FiltersBar from '../components/dashboard/FiltersBar';
 import { FlowBarChart } from '../components/dashboard/FlowBarChart';
@@ -77,12 +78,10 @@ const Dashboard = () => {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(
-          `/api/v1/installations/${id}/dashboard?hours=${hours}`,
+        const json = await api<InstallationDashboardResponse>(
+          `/installations/${id}/dashboard?hours=${hours}`,
           { signal },
         );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json: InstallationDashboardResponse = await res.json();
         setData(json);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;

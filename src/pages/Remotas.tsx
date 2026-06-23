@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Radio } from 'lucide-react';
+import { api } from '../services/api';
 
 import FiltersBar from '../components/dashboard/FiltersBar';
 import HistoryChart, { type ChartSeries } from '../components/dashboard/HistoryChart';
@@ -90,12 +91,10 @@ const Remotas = () => {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(
-          `/api/v1/installations/${INSTALLATION_SLUG}/dashboard?hours=${hours}`,
+        const json = await api<InstallationDashboardResponse>(
+          `/installations/${INSTALLATION_SLUG}/dashboard?hours=${hours}`,
           { signal },
         );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json: InstallationDashboardResponse = await res.json();
         setData(json);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
