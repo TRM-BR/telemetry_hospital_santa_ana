@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Radio } from 'lucide-react';
 import { api } from '../services/api';
-import { isSignalLost, fillSilenceWithZeros } from '../lib/series';
+import { isSignalLost } from '../lib/series';
 
 import FiltersBar from '../components/dashboard/FiltersBar';
 import HistoryChart, { type ChartSeries } from '../components/dashboard/HistoryChart';
@@ -16,12 +16,12 @@ import type {
 
 const INSTALLATION_SLUG = 'hospital-santa-ana';
 
-function buildSeries(devices: DashDevice[], metric: string, winStart: number, nowMs: number): ChartSeries[] {
+function buildSeries(devices: DashDevice[], metric: string): ChartSeries[] {
   return devices.map((d, i) => ({
     key: `dev_${d.device_id}`,
     label: deviceLabel(d),
     color: DEVICE_COLORS[i % DEVICE_COLORS.length],
-    data: fillSilenceWithZeros(d.series?.[metric] ?? [], winStart, nowMs),
+    data: [...(d.series?.[metric] ?? [])].sort((a, b) => a.t - b.t),
   }));
 }
 
@@ -133,23 +133,9 @@ const Remotas = () => {
     [devices],
   );
 
-  const batterySeries = useMemo(() => {
-    const now = Date.now();
-    const winStart = now - hours * 3_600_000;
-    return buildSeries(devices, 'battery_v', winStart, now);
-  }, [devices, hours]);
-
-  const signalSeries = useMemo(() => {
-    const now = Date.now();
-    const winStart = now - hours * 3_600_000;
-    return buildSeries(devices, 'signal', winStart, now);
-  }, [devices, hours]);
-
-  const currentSeries = useMemo(() => {
-    const now = Date.now();
-    const winStart = now - hours * 3_600_000;
-    return buildSeries(devices, 'current_ma', winStart, now);
-  }, [devices, hours]);
+  const batterySeries = useMemo(() => buildSeries(devices, 'battery_v'), [devices]);
+  const signalSeries  = useMemo(() => buildSeries(devices, 'signal'),    [devices]);
+  const currentSeries = useMemo(() => buildSeries(devices, 'current_ma'), [devices]);
 
   return (
     <div className="min-h-screen w-full bg-secondary">
@@ -195,7 +181,7 @@ const Remotas = () => {
         {devices.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {devices.map((d) => (
-              <DeviceCard key={d.device_id} device={d} />
+              <DeviceCard key={d.device_id} device={d} signalLost={isSignalLost(d.last_seen_utc)} />
             ))}
           </div>
         )}
@@ -214,6 +200,7 @@ const Remotas = () => {
                 chartHeightClass="h-[220px]"
                 delayMs={80}
                 muted={allLost}
+                lastSeenUtc={data?.last_seen_utc}
               />
             )}
             {signalSeries.length > 0 && (
@@ -227,6 +214,7 @@ const Remotas = () => {
                 chartHeightClass="h-[220px]"
                 delayMs={160}
                 muted={allLost}
+                lastSeenUtc={data?.last_seen_utc}
               />
             )}
             {currentSeries.length > 0 && (
@@ -242,6 +230,7 @@ const Remotas = () => {
                 chartHeightClass="h-[220px]"
                 delayMs={240}
                 muted={allLost}
+                lastSeenUtc={data?.last_seen_utc}
               />
             )}
           </div>
