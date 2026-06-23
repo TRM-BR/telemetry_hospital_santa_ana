@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Droplets } from 'lucide-react';
 import { isAuthenticated, login } from '../services/auth';
 import { ApiError } from '../services/api';
+import cityImage from '../assets/child-water.jpg';
 
 const STATUS_MESSAGES: Record<string, string> = {
   pending:              'Seu cadastro ainda está aguardando aprovação.',
@@ -56,11 +57,14 @@ const Login = () => {
       <div className="w-full max-w-5xl overflow-hidden rounded-2xl bg-card shadow-card grid grid-cols-1 md:grid-cols-2 min-h-[600px]">
         {/* LEFT — Hero ilustrativo */}
         <aside className="relative hidden md:block bg-primary-deep">
-          <div className="absolute inset-0 bg-gradient-to-br from-[hsl(222_75%_10%)] via-[hsl(220_70%_18%)] to-[hsl(215_65%_28%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,hsl(var(--primary-glow)/0.35),transparent_55%)]" />
-
-          <span className="absolute top-[12%] left-[20%] h-40 w-40 rounded-full bg-primary-glow/20 blur-3xl" />
-          <span className="absolute bottom-[20%] right-[15%] h-52 w-52 rounded-full bg-primary-glow/15 blur-3xl" />
+          <img
+            src={cityImage}
+            alt="Criança brincando com água"
+            className="absolute inset-0 h-full w-full object-cover"
+            width={1536}
+            height={1024}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-primary-deep/60 via-primary-deep/20 to-primary-deep/80" />
 
           <div className="absolute top-8 left-8 flex items-center gap-3 text-primary-foreground z-10">
             <img
@@ -84,19 +88,6 @@ const Login = () => {
             </p>
           </div>
 
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 overflow-hidden">
-            <svg
-              className="absolute inset-x-0 bottom-0 h-32 w-[200%] animate-wave-slow"
-              viewBox="0 0 1200 120"
-              preserveAspectRatio="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M0,60 C200,100 400,20 600,60 C800,100 1000,20 1200,60 L1200,120 L0,120 Z"
-                fill="hsl(var(--primary-glow) / 0.18)"
-              />
-            </svg>
-          </div>
         </aside>
 
         {/* RIGHT — Form */}
