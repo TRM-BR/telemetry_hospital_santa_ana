@@ -249,33 +249,7 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Linha 2 — Histórico individual por remota */}
-        {devices.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
-            {devices.map((d, i) => {
-              const series = perDeviceLevelPct[i];
-              if (!series || series.length === 0) return null;
-              const signalLost = deviceSignalLost(d);
-              return (
-                <HistoryChart
-                  key={d.device_id}
-                  title={`Histórico de Nível (%) — ${groupLabel(i)}`}
-                  unit="%"
-                  windowKey={windowKey}
-                  yDomain={[0, 100]}
-                  yAxisWidth={52}
-                  series={series}
-                  chartHeightClass={CHART_HEIGHT}
-                  delayMs={i * 80}
-                  muted={signalLost}
-                  lastSeenUtc={d.last_seen_utc}
-                />
-              );
-            })}
-          </div>
-        )}
-
-        {/* Linha 3 — Comparativo multi-linha (sem dim: cada linha cai a zero no silêncio) */}
+        {/* Linha 2 — Comparativo multi-linha (sem dim: cada linha cai a zero no silêncio) */}
         {devices.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
             {levelPctSeries.length > 0 && (
@@ -302,6 +276,32 @@ const Dashboard = () => {
                 delayMs={80}
               />
             )}
+          </div>
+        )}
+
+        {/* Linha 3 — Histórico individual por remota */}
+        {devices.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
+            {devices.map((d, i) => {
+              const series = perDeviceLevelPct[i];
+              if (!series || series.length === 0) return null;
+              const signalLost = deviceSignalLost(d);
+              return (
+                <HistoryChart
+                  key={d.device_id}
+                  title={`Histórico de Nível (%) — ${groupLabel(i)}`}
+                  unit="%"
+                  windowKey={windowKey}
+                  yDomain={[0, 100]}
+                  yAxisWidth={52}
+                  series={series}
+                  chartHeightClass={CHART_HEIGHT}
+                  delayMs={i * 80}
+                  muted={signalLost}
+                  lastSeenUtc={d.last_seen_utc}
+                />
+              );
+            })}
           </div>
         )}
 
