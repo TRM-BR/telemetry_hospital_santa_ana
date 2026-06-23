@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Droplets } from 'lucide-react';
 import { api } from '../services/api';
 import { isSignalLost, fillSilenceWithZeros } from '../lib/series';
+import { todaySaoPaulo } from '../lib/shifts';
 
 import FiltersBar from '../components/dashboard/FiltersBar';
 import { FlowBarChart } from '../components/dashboard/FlowBarChart';
@@ -69,6 +70,7 @@ const Dashboard = () => {
 
   const [mode, setMode] = useState<FilterMode>('janela');
   const [windowKey, setWindowKey] = useState<WindowKey>('24h');
+  const [period, setPeriod] = useState(() => { const t = todaySaoPaulo(); return { start: t, end: t }; });
   const [shift, setShift] = useState<{ start: string; end: string }>(() => {
     try {
       const saved = localStorage.getItem(SHIFT_LS_KEY);
@@ -90,8 +92,11 @@ const Dashboard = () => {
         setError(null);
       }
       try {
+        const range = mode === 'periodo'
+          ? `start_date=${period.start}&end_date=${period.end}`
+          : `hours=${hours}`;
         const json = await api<InstallationDashboardResponse>(
-          `/installations/${id}/dashboard?hours=${hours}&shift_start=${shift.start}&shift_end=${shift.end}`,
+          `/installations/${id}/dashboard?${range}&shift_start=${shift.start}&shift_end=${shift.end}`,
           { signal },
         );
         setData(json);
@@ -106,7 +111,7 @@ const Dashboard = () => {
         if (!silent) setLoading(false);
       }
     },
-    [id, hours, shift.start, shift.end],
+    [id, hours, mode, period.start, period.end, shift.start, shift.end],
   );
 
   useEffect(() => {
@@ -216,6 +221,9 @@ const Dashboard = () => {
             setShift(next);
             try { localStorage.setItem(SHIFT_LS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
           }}
+          periodStart={period.start}
+          periodEnd={period.end}
+          onPeriodChange={(s, e) => setPeriod({ start: s, end: e })}
         />
 
         {loading && (

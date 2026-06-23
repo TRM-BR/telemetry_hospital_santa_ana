@@ -1,4 +1,8 @@
 const SP_TZ = 'America/Sao_Paulo';
+
+export function todaySaoPaulo(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: SP_TZ }).format(new Date());
+}
 const MIN_PER_DAY = 1440;
 
 function mod(value: number, base: number): number {
@@ -90,8 +94,8 @@ export function getShiftDisplayState(opts: {
 
   if (!live) {
     return {
-      period1: { label: '1º TURNO', rangeText: `${shiftStart} → ${shiftEnd}`, isCurrent: false, fill: 0 },
-      period2: { label: '2º TURNO', rangeText: `${shiftEnd} → ${shiftStart}`, isCurrent: false, fill: 0 },
+      period1: { label: '1º TURNO', rangeText: `${shiftStart} → ${shiftEnd}`, isCurrent: false, fill: 1 },
+      period2: { label: '2º TURNO', rangeText: `${shiftEnd} → ${shiftStart}`, isCurrent: false, fill: 1 },
     };
   }
 

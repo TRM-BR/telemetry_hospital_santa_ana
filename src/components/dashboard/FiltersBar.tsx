@@ -4,6 +4,7 @@ import type { WindowKey, FilterMode, ConsumptionSummary } from '../../types/tele
 import { WINDOW_OPTIONS } from '../../constants/dashboard';
 import { cn } from '../../lib/cn';
 import { ConsumptionSummaryChip } from './ConsumptionSummaryChip';
+import { todaySaoPaulo } from '../../lib/shifts';
 
 interface FiltersBarProps {
   mode: FilterMode;
@@ -14,19 +15,15 @@ interface FiltersBarProps {
   shiftStart?: string;
   shiftEnd?: string;
   onShiftChange?: (start: string, end: string) => void;
-}
-
-function formatDateInputValue(date: Date) {
-  return date.toISOString().slice(0, 10);
+  periodStart?: string;
+  periodEnd?: string;
+  onPeriodChange?: (start: string, end: string) => void;
 }
 
 export function FiltersBar(p: FiltersBarProps) {
   const [consumptionPopoverOpen, setConsumptionPopoverOpen] = useState(false);
-  const [periodDefaults] = useState(() => {
-    const end = new Date();
-    const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
-    return { start: formatDateInputValue(start), end: formatDateInputValue(end) };
-  });
+  const todaySP = todaySaoPaulo();
+  const live = p.mode === 'janela' || (p.periodEnd ?? '') >= todaySP;
 
   return (
     <div className="relative z-20">
@@ -82,12 +79,17 @@ export function FiltersBar(p: FiltersBarProps) {
               <input
                 type="date"
                 className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
-                defaultValue={periodDefaults.start}
+                value={p.periodStart ?? todaySP}
+                max={todaySP}
+                onChange={(e) => p.onPeriodChange?.(e.target.value, p.periodEnd ?? todaySP)}
               />
               <input
                 type="date"
                 className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
-                defaultValue={periodDefaults.end}
+                value={p.periodEnd ?? todaySP}
+                min={p.periodStart ?? todaySP}
+                max={todaySP}
+                onChange={(e) => p.onPeriodChange?.(p.periodStart ?? todaySP, e.target.value)}
               />
             </div>
           )}
@@ -102,7 +104,7 @@ export function FiltersBar(p: FiltersBarProps) {
               shiftEnd={p.shiftEnd ?? '19:00'}
               onApply={p.onShiftChange}
               onOpenChange={setConsumptionPopoverOpen}
-              live={p.mode === 'janela'}
+              live={live}
             />
           )}
         </div>

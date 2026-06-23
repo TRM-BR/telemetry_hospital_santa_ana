@@ -14,7 +14,7 @@ bloqueados pelo JWT — o token só é emitido para status=approved.
 from __future__ import annotations
 
 import zoneinfo
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -79,7 +79,7 @@ _SQL_SERIES = text("""
     FROM derived_metrics dm
     WHERE dm.device_id = ANY(:device_ids)
       AND dm.metric_name = ANY(:metrics)
-      AND dm.derived_at_utc >= now() - :hours * INTERVAL '1 hour'
+      AND dm.derived_at_utc >= :from_dt AND dm.derived_at_utc < :to_dt
     ORDER BY dm.device_id, dm.metric_name, dm.derived_at_utc ASC
 """)
 
@@ -310,11 +310,26 @@ async def get_dashboard(
     hours: int = Query(24, ge=1, le=720),
     shift_start: str = Query("07:00"),
     shift_end: str = Query("19:00"),
+    start_date: str | None = Query(None, description="YYYY-MM-DD (America/Sao_Paulo)"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD (America/Sao_Paulo)"),
 ):
     """Snapshot real por device + série temporal nas últimas `hours` horas."""
     inst = await _find_installation(db, slug)
     if not inst:
         raise HTTPException(status_code=404, detail="Instalação não encontrada")
+
+    _tz_window = zoneinfo.ZoneInfo(_FULL_ESTIMATE_TZ)
+    if start_date and end_date:
+        try:
+            from_dt = datetime.fromisoformat(start_date).replace(tzinfo=_tz_window)
+            to_dt = datetime.fromisoformat(end_date).replace(tzinfo=_tz_window) + timedelta(days=1)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Datas inválidas (use YYYY-MM-DD)")
+        if from_dt >= to_dt or (to_dt - from_dt) > timedelta(days=31):
+            raise HTTPException(status_code=422, detail="Intervalo inválido (1 a 31 dias, início ≤ fim)")
+    else:
+        to_dt = datetime.now(tz=timezone.utc)
+        from_dt = to_dt - timedelta(hours=hours)
 
     device_rows = (await db.execute(_SQL_DEVICES, {"installation_id": inst.id})).fetchall()
 
@@ -343,7 +358,7 @@ async def get_dashboard(
     # Série temporal por (device, metric)
     series_rows = (await db.execute(
         _SQL_SERIES,
-        {"device_ids": device_ids, "metrics": list(_SERIES_METRICS), "hours": hours},
+        {"device_ids": device_ids, "metrics": list(_SERIES_METRICS), "from_dt": from_dt, "to_dt": to_dt},
     )).fetchall()
     series_by_device: dict[int, dict[str, list[DashSeriesPoint]]] = {}
     for device_id, metric_name, value, ts in series_rows:
