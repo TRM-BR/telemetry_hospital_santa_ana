@@ -405,7 +405,7 @@ export function HistoryChart({
       <div
         ref={setChartEl}
         className={cn(
-          'w-full select-none transition-all',
+          'relative w-full select-none transition-all',
           chartHeightClass,
           muted && 'opacity-55 grayscale',
           zoomable && (isPanningVisual ? 'cursor-grabbing' : 'cursor-grab'),
@@ -415,6 +415,12 @@ export function HistoryChart({
         onMouseUp={handleMouseUp}
         onContextMenu={(e) => e.preventDefault()}
       >
+        {muted && (
+          <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-border bg-card/90 px-3 py-1 text-[11px] text-muted-foreground shadow-soft backdrop-blur-sm">
+            Sem sinal · últimos dados: <span className="tabular-nums text-foreground/70">{formatLastSeen(lastSeenUtc)}</span>
+          </div>
+        )}
+
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={data}

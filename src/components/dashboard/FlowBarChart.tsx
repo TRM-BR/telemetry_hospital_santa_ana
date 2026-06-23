@@ -118,7 +118,13 @@ export function FlowBarChart({
         </div>
       </div>
 
-      <div className={cn('w-full transition-all', chartHeightClass, muted && 'opacity-55 grayscale')}>
+      <div className={cn('relative w-full transition-all', chartHeightClass, muted && 'opacity-55 grayscale')}>
+        {muted && (
+          <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-border bg-card/90 px-3 py-1 text-[11px] text-muted-foreground shadow-soft backdrop-blur-sm">
+            Sem sinal · últimos dados: <span className="tabular-nums text-foreground/70">{formatLastSeen(lastSeenUtc)}</span>
+          </div>
+        )}
+
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
             <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 4" vertical={false} />

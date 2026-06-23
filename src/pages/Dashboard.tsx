@@ -39,6 +39,10 @@ function buildSeriesForDevice(device: DashDevice, metric: string, idx: number, w
   }];
 }
 
+function deviceSignalLost(device: DashDevice): boolean {
+  return isSignalLost(device.last_seen_utc);
+}
+
 function EmptyState({ title, message }: { title: string; message: string }) {
   return (
     <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center shadow-soft">
@@ -239,7 +243,7 @@ const Dashboard = () => {
                 key={d.device_id}
                 device={d}
                 groupIndex={i}
-                signalLost={isSignalLost(d.last_seen_utc)}
+                signalLost={deviceSignalLost(d)}
               />
             ))}
           </div>
@@ -251,7 +255,7 @@ const Dashboard = () => {
             {devices.map((d, i) => {
               const series = perDeviceLevelPct[i];
               if (!series || series.length === 0) return null;
-              const signalLost = isSignalLost(d.last_seen_utc);
+              const signalLost = deviceSignalLost(d);
               return (
                 <HistoryChart
                   key={d.device_id}
@@ -309,7 +313,7 @@ const Dashboard = () => {
               {devices.map((d, i) => {
                 const series = perDeviceFlowHourly[i];
                 if (!series || series.length === 0) return null;
-                const signalLost = isSignalLost(d.last_seen_utc);
+                const signalLost = deviceSignalLost(d);
                 return (
                   <FlowBarChart
                     key={d.device_id}
@@ -331,7 +335,7 @@ const Dashboard = () => {
               {devices.map((d, i) => {
                 const series = perDeviceFlowNet[i];
                 if (!series || series.length === 0) return null;
-                const signalLost = isSignalLost(d.last_seen_utc);
+                const signalLost = deviceSignalLost(d);
                 return (
                   <HistoryChart
                     key={d.device_id}
