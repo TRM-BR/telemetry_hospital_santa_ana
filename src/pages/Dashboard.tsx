@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Droplets } from 'lucide-react';
 import { api } from '../services/api';
+import { isSignalLost, fillSilenceWithZeros } from '../lib/series';
 
 import FiltersBar from '../components/dashboard/FiltersBar';
 import { FlowBarChart } from '../components/dashboard/FlowBarChart';
@@ -17,20 +18,17 @@ import type {
 
 function groupLabel(i: number) { return `Grupo ${i + 1}`; }
 
-function buildSeries(devices: DashDevice[], metric: string): ChartSeries[] {
-  return devices
-    .map((d, i) => ({
-      key: `dev_${d.device_id}`,
-      label: groupLabel(i),
-      color: CHART_COLORS[i % CHART_COLORS.length],
-      data: d.series?.[metric] ?? [],
-    }))
-    .filter((s) => s.data.length > 0);
+function buildSeries(devices: DashDevice[], metric: string, winStart: number, nowMs: number): ChartSeries[] {
+  return devices.map((d, i) => ({
+    key: `dev_${d.device_id}`,
+    label: groupLabel(i),
+    color: CHART_COLORS[i % CHART_COLORS.length],
+    data: fillSilenceWithZeros(d.series?.[metric] ?? [], winStart, nowMs),
+  }));
 }
 
-function buildSeriesForDevice(device: DashDevice, metric: string, idx: number): ChartSeries[] {
-  const data = device.series?.[metric] ?? [];
-  if (data.length === 0) return [];
+function buildSeriesForDevice(device: DashDevice, metric: string, idx: number, winStart: number, nowMs: number): ChartSeries[] {
+  const data = fillSilenceWithZeros(device.series?.[metric] ?? [], winStart, nowMs);
   return [{
     key: `dev_${device.device_id}`,
     label: groupLabel(idx),
@@ -56,8 +54,8 @@ function fmtDateTime(iso: string | null): string {
   return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
 }
 
-
 const CHART_HEIGHT = 'h-[280px]';
+const AUTO_REFRESH_MS = 30_000;
 
 const Dashboard = () => {
   const { id } = useParams<{ id: string }>();
@@ -74,56 +72,81 @@ const Dashboard = () => {
   const hours = WINDOW_TO_HOURS[windowKey];
 
   const load = useCallback(
-    async (signal: AbortSignal) => {
-      setLoading(true);
-      setError(null);
+    async (signal: AbortSignal, silent = false) => {
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       try {
         const json = await api<InstallationDashboardResponse>(
           `/installations/${id}/dashboard?hours=${hours}`,
           { signal },
         );
         setData(json);
+        setError(null);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
-        setError('Não foi possível carregar os dados do dashboard.');
-        setData(null);
+        if (!silent) {
+          setError('Não foi possível carregar os dados do dashboard.');
+          setData(null);
+        }
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [id, hours],
   );
 
   useEffect(() => {
-    const ctrl = new AbortController();
+    let ctrl = new AbortController();
     load(ctrl.signal);
-    return () => ctrl.abort();
+
+    const iv = setInterval(() => {
+      ctrl.abort();
+      ctrl = new AbortController();
+      load(ctrl.signal, true);
+    }, AUTO_REFRESH_MS);
+
+    return () => {
+      ctrl.abort();
+      clearInterval(iv);
+    };
   }, [load, refreshKey]);
 
   const devices = useMemo(() => data?.devices ?? [], [data]);
 
   // Linha 2: série por remota (individual)
-  const perDeviceLevelPct = useMemo(
-    () => devices.map((d, i) => buildSeriesForDevice(d, 'level_pct', i)),
-    [devices],
-  );
+  const perDeviceLevelPct = useMemo(() => {
+    const now = Date.now();
+    const winStart = now - hours * 3_600_000;
+    return devices.map((d, i) => buildSeriesForDevice(d, 'level_pct', i, winStart, now));
+  }, [devices, hours]);
 
   // Linha 3: comparativo multi-linha
-  const levelPctSeries = useMemo(() => buildSeries(devices, 'level_pct'), [devices]);
-  const levelMSeries   = useMemo(() => buildSeries(devices, 'level_m'), [devices]);
+  const levelPctSeries = useMemo(() => {
+    const now = Date.now();
+    const winStart = now - hours * 3_600_000;
+    return buildSeries(devices, 'level_pct', winStart, now);
+  }, [devices, hours]);
 
-  const hasSeries = levelPctSeries.length > 0 || levelMSeries.length > 0;
+  const levelMSeries = useMemo(() => {
+    const now = Date.now();
+    const winStart = now - hours * 3_600_000;
+    return buildSeries(devices, 'level_m', winStart, now);
+  }, [devices, hours]);
 
-  // Linha 4: vazão por grupo (flow_hourly_lph = barras; flow_net_lph = linhas)
-  const perDeviceFlowHourly = useMemo(
-    () => devices.map((d, i) => buildSeriesForDevice(d, 'flow_hourly_lph', i)),
-    [devices],
-  );
-  const perDeviceFlowNet = useMemo(
-    () => devices.map((d, i) => buildSeriesForDevice(d, 'flow_consumo_lph', i)),
-    [devices],
-  );
-  const hasFlowSeries = perDeviceFlowHourly.some((s) => s.length > 0);
+  // Linha 4: vazão por grupo
+  const perDeviceFlowHourly = useMemo(() => {
+    const now = Date.now();
+    const winStart = now - hours * 3_600_000;
+    return devices.map((d, i) => buildSeriesForDevice(d, 'flow_hourly_lph', i, winStart, now));
+  }, [devices, hours]);
+
+  const perDeviceFlowNet = useMemo(() => {
+    const now = Date.now();
+    const winStart = now - hours * 3_600_000;
+    return devices.map((d, i) => buildSeriesForDevice(d, 'flow_consumo_lph', i, winStart, now));
+  }, [devices, hours]);
 
   const installationName = data?.installation_name ?? 'Hospital Santa Ana';
 
@@ -193,24 +216,22 @@ const Dashboard = () => {
           />
         )}
 
-        {!loading && !error && devices.length > 0 && !hasSeries && (
-          <EmptyState
-            title="Sem leituras na janela selecionada"
-            message="As remotas estão registradas, mas não há leituras no período escolhido. Tente uma janela maior ou aguarde o próximo envio."
-          />
-        )}
-
         {/* Linha 1 — Gauge de nível por remota */}
         {devices.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
             {devices.map((d, i) => (
-              <LevelGaugeCard key={d.device_id} device={d} groupIndex={i} />
+              <LevelGaugeCard
+                key={d.device_id}
+                device={d}
+                groupIndex={i}
+                signalLost={isSignalLost(d.last_seen_utc)}
+              />
             ))}
           </div>
         )}
 
         {/* Linha 2 — Histórico individual por remota */}
-        {devices.length > 0 && perDeviceLevelPct.some((s) => s.length > 0) && (
+        {devices.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
             {devices.map((d, i) => {
               const series = perDeviceLevelPct[i];
@@ -226,14 +247,15 @@ const Dashboard = () => {
                   series={series}
                   chartHeightClass={CHART_HEIGHT}
                   delayMs={i * 80}
+                  muted={isSignalLost(d.last_seen_utc)}
                 />
               );
             })}
           </div>
         )}
 
-        {/* Linha 3 — Comparativo multi-linha */}
-        {hasSeries && (
+        {/* Linha 3 — Comparativo multi-linha (sem dim: cada linha cai a zero no silêncio) */}
+        {devices.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
             {levelPctSeries.length > 0 && (
               <HistoryChart
@@ -263,49 +285,49 @@ const Dashboard = () => {
         )}
 
         {/* Linha 4 — Vazão por grupo */}
-        {hasFlowSeries && (
+        {devices.length > 0 && (
           <>
             {/* Barras: vazão horária assinada */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
               {devices.map((d, i) => {
-                const hourlyData = d.series?.['flow_hourly_lph'] ?? [];
-                if (hourlyData.length === 0) return null;
+                const series = perDeviceFlowHourly[i];
+                if (!series || series.length === 0) return null;
                 return (
                   <FlowBarChart
                     key={d.device_id}
                     title={`Vazão (L/h) — ${groupLabel(i)}`}
-                    data={hourlyData}
+                    data={series[0].data}
                     label={groupLabel(i)}
                     windowKey={windowKey}
                     chartHeightClass={CHART_HEIGHT}
                     delayMs={i * 80}
+                    muted={isSignalLost(d.last_seen_utc)}
                   />
                 );
               })}
             </div>
 
             {/* Linhas: evolução contínua da vazão */}
-            {perDeviceFlowNet.some((s) => s.length > 0) && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
-                {devices.map((d, i) => {
-                  const series = perDeviceFlowNet[i];
-                  if (!series || series.length === 0) return null;
-                  return (
-                    <HistoryChart
-                      key={d.device_id}
-                      title={`Consumo (L/h) — ${groupLabel(i)}`}
-                      unit="L/h"
-                      windowKey={windowKey}
-                      yDomain={[0, 'auto']}
-                      yAxisWidth={52}
-                      series={series}
-                      chartHeightClass={CHART_HEIGHT}
-                      delayMs={i * 80}
-                    />
-                  );
-                })}
-              </div>
-            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
+              {devices.map((d, i) => {
+                const series = perDeviceFlowNet[i];
+                if (!series || series.length === 0) return null;
+                return (
+                  <HistoryChart
+                    key={d.device_id}
+                    title={`Consumo (L/h) — ${groupLabel(i)}`}
+                    unit="L/h"
+                    windowKey={windowKey}
+                    yDomain={[0, 'auto']}
+                    yAxisWidth={52}
+                    series={series}
+                    chartHeightClass={CHART_HEIGHT}
+                    delayMs={i * 80}
+                    muted={isSignalLost(d.last_seen_utc)}
+                  />
+                );
+              })}
+            </div>
           </>
         )}
 

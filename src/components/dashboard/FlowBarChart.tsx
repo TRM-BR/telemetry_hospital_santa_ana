@@ -3,6 +3,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import type { SeriesPoint, WindowKey } from '../../types/telemetry';
+import { cn } from '../../lib/cn';
 
 interface FlowBarChartProps {
   title: string;
@@ -12,6 +13,7 @@ interface FlowBarChartProps {
   windowKey: WindowKey;
   delayMs?: number;
   chartHeightClass?: string;
+  muted?: boolean;
 }
 
 function formatTime(ts: number, win: WindowKey) {
@@ -45,6 +47,7 @@ export function FlowBarChart({
   windowKey,
   delayMs = 0,
   chartHeightClass = 'h-[280px]',
+  muted,
 }: FlowBarChartProps) {
   const chartData = data.map((p) => ({ t: p.t, v: p.v }));
 
@@ -90,12 +93,22 @@ export function FlowBarChart({
 
   return (
     <div
-      className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in"
+      className={cn(
+        'rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in',
+        muted && 'opacity-60 grayscale transition-all',
+      )}
       style={{ animationDelay: `${delayMs}ms` }}
     >
-      <div className="mb-4">
-        <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Vazão</p>
-        <h3 className="mt-1 text-lg font-semibold text-foreground">{title}</h3>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Vazão</p>
+          <h3 className="mt-1 text-lg font-semibold text-foreground">{title}</h3>
+        </div>
+        {muted && (
+          <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-700">
+            Sem sinal
+          </span>
+        )}
       </div>
 
       <div className={`w-full ${chartHeightClass}`}>

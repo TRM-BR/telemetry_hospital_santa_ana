@@ -31,6 +31,7 @@ interface HistoryChartProps {
   referenceLines?: Array<{ value: number; label: string; color: string }>;
   zoomable?: boolean;
   xDomain?: [number, number];
+  muted?: boolean;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ export function HistoryChart({
   title, unit, series, badges, windowKey, delayMs = 0,
   yDomain, lineType = 'monotone', tooltipNote, loading, referenceLines,
   chartHeightClass = 'h-[240px]', yAxisWidth = 36, zoomable = true,
-  xDomain,
+  xDomain, muted,
 }: HistoryChartProps) {
 
   // ── zoom/pan state ─────────────────────────────────────────────────────────
@@ -338,7 +339,10 @@ export function HistoryChart({
 
   return (
     <div
-      className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in"
+      className={cn(
+        'rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in',
+        muted && 'opacity-60 grayscale transition-all',
+      )}
       style={{ animationDelay: `${delayMs}ms` }}
     >
       {/* Header */}
@@ -348,6 +352,11 @@ export function HistoryChart({
           <h3 className="mt-1 text-lg font-semibold text-foreground">{title}</h3>
         </div>
         <div className="flex flex-wrap justify-end items-center gap-2">
+          {muted && (
+            <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-700">
+              Sem sinal
+            </span>
+          )}
           {badges?.map((b, i) => (
             <span
               key={i}

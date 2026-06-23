@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Radio } from 'lucide-react';
 import { api } from '../services/api';
+import { isSignalLost, fillSilenceWithZeros } from '../lib/series';
 
 import FiltersBar from '../components/dashboard/FiltersBar';
 import HistoryChart, { type ChartSeries } from '../components/dashboard/HistoryChart';
@@ -15,15 +16,13 @@ import type {
 
 const INSTALLATION_SLUG = 'hospital-santa-ana';
 
-function buildSeries(devices: DashDevice[], metric: string): ChartSeries[] {
-  return devices
-    .map((d, i) => ({
-      key: `dev_${d.device_id}`,
-      label: deviceLabel(d),
-      color: DEVICE_COLORS[i % DEVICE_COLORS.length],
-      data: d.series?.[metric] ?? [],
-    }))
-    .filter((s) => s.data.length > 0);
+function buildSeries(devices: DashDevice[], metric: string, winStart: number, nowMs: number): ChartSeries[] {
+  return devices.map((d, i) => ({
+    key: `dev_${d.device_id}`,
+    label: deviceLabel(d),
+    color: DEVICE_COLORS[i % DEVICE_COLORS.length],
+    data: fillSilenceWithZeros(d.series?.[metric] ?? [], winStart, nowMs),
+  }));
 }
 
 function ArrivalList({ devices }: { devices: DashDevice[] }) {
@@ -87,37 +86,71 @@ const Remotas = () => {
   const hours = WINDOW_TO_HOURS[windowKey];
 
   const load = useCallback(
-    async (signal: AbortSignal) => {
-      setLoading(true);
-      setError(null);
+    async (signal: AbortSignal, silent = false) => {
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       try {
         const json = await api<InstallationDashboardResponse>(
           `/installations/${INSTALLATION_SLUG}/dashboard?hours=${hours}`,
           { signal },
         );
         setData(json);
+        setError(null);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
-        setError('Não foi possível carregar os dados das remotas.');
-        setData(null);
+        if (!silent) {
+          setError('Não foi possível carregar os dados das remotas.');
+          setData(null);
+        }
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [hours],
   );
 
   useEffect(() => {
-    const ctrl = new AbortController();
+    let ctrl = new AbortController();
     load(ctrl.signal);
-    return () => ctrl.abort();
+
+    const iv = setInterval(() => {
+      ctrl.abort();
+      ctrl = new AbortController();
+      load(ctrl.signal, true);
+    }, 30_000);
+
+    return () => {
+      ctrl.abort();
+      clearInterval(iv);
+    };
   }, [load, refreshKey]);
 
   const devices = useMemo(() => data?.devices ?? [], [data]);
 
-  const batterySeries  = useMemo(() => buildSeries(devices, 'battery_v'), [devices]);
-  const signalSeries   = useMemo(() => buildSeries(devices, 'signal'), [devices]);
-  const currentSeries  = useMemo(() => buildSeries(devices, 'current_ma'), [devices]);
+  const allLost = useMemo(
+    () => devices.length > 0 && devices.every((d) => isSignalLost(d.last_seen_utc)),
+    [devices],
+  );
+
+  const batterySeries = useMemo(() => {
+    const now = Date.now();
+    const winStart = now - hours * 3_600_000;
+    return buildSeries(devices, 'battery_v', winStart, now);
+  }, [devices, hours]);
+
+  const signalSeries = useMemo(() => {
+    const now = Date.now();
+    const winStart = now - hours * 3_600_000;
+    return buildSeries(devices, 'signal', winStart, now);
+  }, [devices, hours]);
+
+  const currentSeries = useMemo(() => {
+    const now = Date.now();
+    const winStart = now - hours * 3_600_000;
+    return buildSeries(devices, 'current_ma', winStart, now);
+  }, [devices, hours]);
 
   return (
     <div className="min-h-screen w-full bg-secondary">
@@ -182,6 +215,7 @@ const Remotas = () => {
                 series={batterySeries}
                 chartHeightClass="h-[220px]"
                 delayMs={80}
+                muted={allLost}
               />
             )}
             {signalSeries.length > 0 && (
@@ -194,6 +228,7 @@ const Remotas = () => {
                 series={signalSeries}
                 chartHeightClass="h-[220px]"
                 delayMs={160}
+                muted={allLost}
               />
             )}
             {currentSeries.length > 0 && (
@@ -208,6 +243,7 @@ const Remotas = () => {
                 series={currentSeries}
                 chartHeightClass="h-[220px]"
                 delayMs={240}
+                muted={allLost}
               />
             )}
           </div>
