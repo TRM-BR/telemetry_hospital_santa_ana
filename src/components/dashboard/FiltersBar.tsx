@@ -102,6 +102,7 @@ export function FiltersBar(p: FiltersBarProps) {
               shiftEnd={p.shiftEnd ?? '19:00'}
               onApply={p.onShiftChange}
               onOpenChange={setConsumptionPopoverOpen}
+              live={p.mode === 'janela'}
             />
           )}
         </div>
