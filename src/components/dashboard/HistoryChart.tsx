@@ -313,7 +313,12 @@ export function HistoryChart({
     const { active, payload, label } = props;
     if (!active || !payload?.length) return null;
     if (isSelecting.current || isPanning.current) return null;
-    const accentColor = payload[0]?.stroke ?? 'hsl(var(--primary))';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const validEntries: any[] = payload.filter((e: any) => e.value != null);
+    if (validEntries.length === 0) return null;
+    const accentColor = validEntries.length === 1
+      ? (validEntries[0]?.stroke ?? 'hsl(var(--primary))')
+      : 'hsl(var(--border))';
     return (
       <div style={{
         background: 'hsl(var(--card))',
@@ -329,12 +334,14 @@ export function HistoryChart({
           {formatTooltipTime(Number(label), spanDays)}
         </p>
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        {payload.map((entry: any) => (
+        {validEntries.map((entry: any) => (
           <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: entry.stroke, flexShrink: 0 }} />
-            <span style={{ color: 'hsl(var(--muted-foreground))', flex: 1 }}>{entry.name}</span>
+            {validEntries.length > 1 && (
+              <span style={{ color: 'hsl(var(--muted-foreground))', flex: 1 }}>{entry.name}</span>
+            )}
             <span style={{ fontWeight: 700, color: 'hsl(var(--foreground))', fontVariantNumeric: 'tabular-nums' }}>
-              {(+(entry.value ?? 0)).toFixed(2)} {unit}
+              {(+entry.value).toFixed(2)} {unit}
             </span>
           </div>
         ))}
