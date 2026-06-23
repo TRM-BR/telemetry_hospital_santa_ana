@@ -4,16 +4,18 @@ users — Usuários do sistema.
 Senhas armazenadas como hash bcrypt.
 Roles: 'admin' | 'approver' | 'viewer'.
   - admin   : acesso total, incluindo auditoria e terminal MQTT.
-  - approver: acesso padrão + pode aprovar/rejeitar cadastros de viewer;
-              aprovação de outro approver exige 2 votos de approver ou 1 admin.
+  - approver: acesso padrão + pode aprovar/rejeitar cadastros de viewer.
+              Promoção a approver feita apenas por admin.
   - viewer  : acesso padrão ao dashboard e instalações.
 
-account_status:
-  - 'pending_email'        : aguardando confirmação do código enviado por email.
-  - 'pending_approval'     : email confirmado, aguardando aprovação de admin/approver.
-  - 'active'               : conta ativa, pode fazer login.
+account_status (canônico):
+  - 'pending'              : aguarda aprovação de admin/approver.
+  - 'approved'             : conta ativa, pode fazer login.
   - 'rejected'             : cadastro recusado.
-  - 'disabled'             : conta desativada por admin.
+  - 'inactive'             : conta desativada por admin.
+
+Estados reservados (e-mail):
+  - 'pending_email'        : aguardando confirmação do código enviado por email.
   - 'pending_email_change' : email atual inválido/nulo, aguarda troca via fluxo de perfil.
 """
 from __future__ import annotations
@@ -48,7 +50,7 @@ class User(Base):
 
     # Estado da conta (ver docstring do módulo)
     account_status: Mapped[str] = mapped_column(
-        String(24), nullable=False, default="active", server_default="'active'"
+        String(24), nullable=False, default="approved", server_default="'approved'"
     )
 
     # Role solicitada no cadastro — apenas relevante enquanto pending_*

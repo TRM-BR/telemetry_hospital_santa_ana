@@ -4,14 +4,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import func, or_, select, update
 
 from app.api.deps import CurrentUser, DbDep
+from app.config import get_settings
 from app.db.models.auth_log import AuthLog
 from app.db.models.user import User
+from app.logging import get_logger
+from app.rate_limit import limiter
 from app.schemas.auth import (
     LoginRequest,
     PasswordForgotRequest,
@@ -39,6 +41,7 @@ from app.services.email_templates import (
     build_signup_html,
 )
 
+logger = get_logger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -59,10 +62,10 @@ async def _find_user_by_identifier(db: DbDep, identifier: str) -> User | None:
 
 def _account_status_error(status_value: str) -> HTTPException:
     messages = {
-        "pending_email": "Confirmação de email pendente. Verifique sua caixa de entrada.",
-        "pending_approval": "Cadastro aguardando aprovação. Você será notificado por email.",
-        "rejected": "Cadastro não aprovado. Entre em contato com o administrador.",
-        "disabled": "Conta desativada. Entre em contato com o administrador.",
+        "pending_email":        "Confirmação de email pendente. Verifique sua caixa de entrada.",
+        "pending":              "Cadastro aguardando aprovação. Você será notificado por email.",
+        "rejected":             "Cadastro não aprovado. Entre em contato com o administrador.",
+        "inactive":             "Conta desativada. Entre em contato com o administrador.",
         "pending_email_change": (
             "Seu email precisa ser atualizado. "
             "Entre em contato com o administrador."
@@ -75,17 +78,17 @@ def _account_status_error(status_value: str) -> HTTPException:
 # ── Login ─────────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: DbDep):
+@limiter.limit("5/minute")
+async def login(request: Request, body: LoginRequest, db: DbDep):
     user = await _find_user_by_identifier(db, body.identifier)
 
     ok = (
         user is not None
         and user.is_active
-        and user.account_status == "active"
+        and user.account_status == "approved"
         and verify_password(body.password, user.hashed_password)
     )
 
-    # Registra tentativa em auth_logs
     log = AuthLog(
         user_id=user.id if user else None,
         username_attempted=body.identifier,
@@ -93,7 +96,7 @@ async def login(body: LoginRequest, db: DbDep):
     )
     db.add(log)
 
-    if user and user.is_active and user.account_status != "active":
+    if user and user.is_active and user.account_status != "approved":
         await db.commit()
         raise _account_status_error(user.account_status)
 
@@ -110,6 +113,7 @@ async def login(body: LoginRequest, db: DbDep):
     await db.commit()
 
     token = create_access_token(user.id, user.username, user.role)
+    logger.info("auth.login.ok", user_id=user.id, username=user.username, role=user.role)
     return TokenResponse(access_token=token)
 
 
@@ -127,10 +131,12 @@ async def me(user_payload: CurrentUser, db: DbDep):
 # ── Cadastro ──────────────────────────────────────────────────────────────────
 
 @router.post("/register", status_code=status.HTTP_202_ACCEPTED)
-async def register(body: RegisterRequest, db: DbDep):
+@limiter.limit("3/minute")
+async def register(request: Request, body: RegisterRequest, db: DbDep):
     """
     Inicia o fluxo de cadastro.
 
+    Todos os cadastros públicos são registrados como viewer pendente.
     Não cria o usuário ainda — guarda o payload em email_codes.pending_payload
     e envia o código de confirmação por email.
 
@@ -138,7 +144,6 @@ async def register(body: RegisterRequest, db: DbDep):
     """
     await cleanup_expired(db)
 
-    # Verifica unicidade (sem revelar detalhes)
     existing = await db.execute(
         select(User).where(
             or_(
@@ -148,17 +153,16 @@ async def register(body: RegisterRequest, db: DbDep):
         )
     )
     if existing.scalar_one_or_none() is not None:
-        # Retorna 202 mesmo assim (anti-enumeração)
         return {"detail": "Se o cadastro for válido, um código será enviado para o email."}
 
     hashed = hash_password(body.password)
     payload = {
         "username": body.username,
         "hashed_password": hashed,
-        "requested_role": body.requested_role,
+        "requested_role": "viewer",  # always viewer — public cannot choose role
     }
 
-    s_cfg = __import__("app.config", fromlist=["get_settings"]).get_settings()
+    s_cfg = get_settings()
     code = await issue_code(
         db,
         email=str(body.email),
@@ -182,12 +186,14 @@ async def register(body: RegisterRequest, db: DbDep):
         ),
     )
 
+    logger.info("auth.register.initiated", email=str(body.email), username=body.username)
     return {"detail": "Se o cadastro for válido, um código será enviado para o email."}
 
 
 @router.post("/register/confirm", status_code=status.HTTP_201_CREATED)
-async def register_confirm(body: RegisterConfirmRequest, db: DbDep):
-    """Valida o código de confirmação e cria o usuário com status pending_approval."""
+@limiter.limit("10/minute")
+async def register_confirm(request: Request, body: RegisterConfirmRequest, db: DbDep):
+    """Valida o código de confirmação e cria o usuário com status pending."""
     try:
         record = await verify_code(db, str(body.email), "signup", body.code)
     except ValueError as exc:
@@ -195,7 +201,6 @@ async def register_confirm(body: RegisterConfirmRequest, db: DbDep):
 
     payload = record.pending_payload or {}
 
-    # Verifica unicidade novamente (alguém pode ter se cadastrado no intervalo)
     existing = await db.execute(
         select(User).where(
             or_(
@@ -214,26 +219,35 @@ async def register_confirm(body: RegisterConfirmRequest, db: DbDep):
         username=payload["username"],
         email=str(body.email),
         hashed_password=payload["hashed_password"],
-        role="viewer",  # role provisória; será definida na aprovação
-        requested_role=payload.get("requested_role", "viewer"),
-        account_status="pending_approval",
+        role="viewer",
+        requested_role="viewer",
+        account_status="pending",
         is_active=True,
     )
     db.add(user)
     await db.commit()
+    await db.refresh(user)
 
+    logger.info(
+        "auth.register.confirmed",
+        user_id=user.id,
+        username=user.username,
+        email=user.email,
+        account_status="pending",
+    )
     return {"detail": "Email confirmado. Seu cadastro aguarda aprovação."}
 
 
 # ── Recuperação de senha ──────────────────────────────────────────────────────
 
 @router.post("/password/forgot", status_code=status.HTTP_202_ACCEPTED)
-async def password_forgot(body: PasswordForgotRequest, db: DbDep):
+@limiter.limit("5/minute")
+async def password_forgot(request: Request, body: PasswordForgotRequest, db: DbDep):
     """Envia código de recuperação de senha. Sempre retorna 202 (anti-enumeração)."""
     user = await _find_user_by_identifier(db, body.identifier)
 
-    if user and user.email and user.account_status == "active":
-        s_cfg = __import__("app.config", fromlist=["get_settings"]).get_settings()
+    if user and user.email and user.account_status == "approved":
+        s_cfg = get_settings()
         code = await issue_code(
             db,
             email=user.email,
@@ -254,15 +268,17 @@ async def password_forgot(body: PasswordForgotRequest, db: DbDep):
                 ttl_minutes=s_cfg.mail_otp_ttl_minutes,
             ),
         )
+        logger.info("auth.password_reset.requested", user_id=user.id, username=user.username)
 
     return {"detail": "Se o identificador for válido, um código será enviado."}
 
 
 @router.post("/password/verify-code", status_code=status.HTTP_200_OK)
-async def password_verify_code(body: PasswordVerifyCodeRequest, db: DbDep):
+@limiter.limit("10/minute")
+async def password_verify_code(request: Request, body: PasswordVerifyCodeRequest, db: DbDep):
     """Valida o código de recuperação SEM consumi-lo. Usado na etapa 1 da UI."""
     user = await _find_user_by_identifier(db, body.identifier)
-    if not user or not user.email or user.account_status != "active":
+    if not user or not user.email or user.account_status != "approved":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código inválido, expirado ou já utilizado.",
@@ -275,10 +291,11 @@ async def password_verify_code(body: PasswordVerifyCodeRequest, db: DbDep):
 
 
 @router.post("/password/reset", status_code=status.HTTP_200_OK)
-async def password_reset(body: PasswordResetRequest, db: DbDep):
+@limiter.limit("10/minute")
+async def password_reset(request: Request, body: PasswordResetRequest, db: DbDep):
     """Redefine a senha usando o código recebido por email."""
     user = await _find_user_by_identifier(db, body.identifier)
-    if not user or not user.email or user.account_status != "active":
+    if not user or not user.email or user.account_status != "approved":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código inválido, expirado ou já utilizado.",
@@ -292,6 +309,8 @@ async def password_reset(body: PasswordResetRequest, db: DbDep):
     if record.user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código inválido.")
 
+    validate_password_strength(body.new_password, username=user.username, email=user.email)
+
     await db.execute(
         update(User)
         .where(User.id == record.user_id)
@@ -301,4 +320,5 @@ async def password_reset(body: PasswordResetRequest, db: DbDep):
         )
     )
     await db.commit()
+    logger.info("auth.password_reset.completed", user_id=user.id, username=user.username)
     return {"detail": "Senha redefinida com sucesso."}

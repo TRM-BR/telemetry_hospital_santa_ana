@@ -116,6 +116,20 @@ export interface DashDevice {
   tank_count?: number | null;
 }
 
+export interface ShiftWindow {
+  label: string;
+  start: string;  // "HH:MM"
+  end: string;    // "HH:MM"
+}
+
+export interface ConsumptionSummary {
+  total_m3: number;
+  period_1_m3: number;
+  period_2_m3: number;
+  period_1: ShiftWindow;
+  period_2: ShiftWindow;
+}
+
 export interface InstallationDashboardResponse {
   installation_slug: string;
   installation_name: string;
@@ -127,4 +141,5 @@ export interface InstallationDashboardResponse {
   volume_total_l: number;
   faltante_total_l: number;
   capacidade_total_l: number;
+  consumption_summary?: ConsumptionSummary | null;
 }

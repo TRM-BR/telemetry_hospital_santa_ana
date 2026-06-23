@@ -1,13 +1,36 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Droplets } from 'lucide-react';
 import { isAuthenticated, login } from '../services/auth';
+import { ApiError } from '../services/api';
+
+const STATUS_MESSAGES: Record<string, string> = {
+  pending:              'Seu cadastro ainda está aguardando aprovação.',
+  rejected:             'Cadastro não aprovado. Entre em contato com o administrador.',
+  inactive:             'Conta desativada. Entre em contato com o administrador.',
+  pending_email:        'Confirme seu email antes de fazer login.',
+  pending_email_change: 'Seu email precisa ser atualizado. Entre em contato com o administrador.',
+};
+
+function friendlyError(err: unknown): string {
+  if (err instanceof ApiError) {
+    const msg = err.message.toLowerCase();
+    for (const [key, label] of Object.entries(STATUS_MESSAGES)) {
+      if (msg.includes(key) || msg.includes(label.toLowerCase().slice(0, 15))) {
+        return label;
+      }
+    }
+    if (err.status === 403) return err.message;
+    return 'Usuário ou senha inválidos.';
+  }
+  return 'Erro de conexão. Verifique a rede e tente novamente.';
+}
 
 const Login = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword]   = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]         = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -19,14 +42,11 @@ const Login = () => {
     setSubmitting(true);
     setError(null);
 
-    // Pequeno delay pra feedback visual
-    await new Promise((r) => setTimeout(r, 400));
-
-    const ok = login(username, password);
-    if (ok) {
+    try {
+      await login(identifier, password);
       navigate('/menu', { replace: true });
-    } else {
-      setError('Usuário ou senha inválidos.');
+    } catch (err) {
+      setError(friendlyError(err));
       setSubmitting(false);
     }
   }
@@ -39,11 +59,9 @@ const Login = () => {
           <div className="absolute inset-0 bg-gradient-to-br from-[hsl(222_75%_10%)] via-[hsl(220_70%_18%)] to-[hsl(215_65%_28%)]" />
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,hsl(var(--primary-glow)/0.35),transparent_55%)]" />
 
-          {/* Bolhas decorativas */}
           <span className="absolute top-[12%] left-[20%] h-40 w-40 rounded-full bg-primary-glow/20 blur-3xl" />
           <span className="absolute bottom-[20%] right-[15%] h-52 w-52 rounded-full bg-primary-glow/15 blur-3xl" />
 
-          {/* Brasão top-left */}
           <div className="absolute top-8 left-8 flex items-center gap-3 text-primary-foreground z-10">
             <img
               src="/santana-coat.png"
@@ -59,7 +77,6 @@ const Login = () => {
             </div>
           </div>
 
-          {/* Welcome */}
           <div className="absolute bottom-12 left-8 right-8 text-primary-foreground z-10">
             <h2 className="text-4xl sm:text-5xl font-light tracking-[0.3em]">BEM-VINDO</h2>
             <p className="mt-3 text-sm text-primary-foreground/75 max-w-xs">
@@ -67,7 +84,6 @@ const Login = () => {
             </p>
           </div>
 
-          {/* Ondas SVG no rodapé */}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 overflow-hidden">
             <svg
               className="absolute inset-x-0 bottom-0 h-32 w-[200%] animate-wave-slow"
@@ -86,7 +102,6 @@ const Login = () => {
         {/* RIGHT — Form */}
         <section className="flex flex-col justify-between p-8 sm:p-14">
           <div>
-            {/* Header mobile */}
             <div className="md:hidden flex items-center gap-3 mb-8 text-primary">
               <img
                 src="/santana-coat.png"
@@ -107,16 +122,17 @@ const Login = () => {
 
             <form className="mt-10 space-y-7" onSubmit={onSubmit}>
               <div>
-                <label htmlFor="username" className="block text-sm text-foreground mb-1">
-                  Usuário
+                <label htmlFor="identifier" className="block text-sm text-foreground mb-1">
+                  Usuário ou email
                 </label>
                 <input
-                  id="username"
+                  id="identifier"
                   type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   required
                   autoFocus
+                  autoComplete="username"
                   className="w-full bg-transparent border-0 border-b border-input pb-2 text-sm text-foreground focus:outline-none focus:border-primary transition-colors"
                 />
               </div>
@@ -126,9 +142,12 @@ const Login = () => {
                   <label htmlFor="password" className="block text-sm text-foreground">
                     Senha
                   </label>
-                  <a href="#" className="text-xs font-semibold text-primary hover:text-primary-glow transition-colors">
+                  <Link
+                    to="/esqueci-senha"
+                    className="text-xs font-semibold text-primary hover:text-primary-glow transition-colors"
+                  >
                     Esqueceu a senha?
-                  </a>
+                  </Link>
                 </div>
                 <input
                   id="password"
@@ -136,6 +155,7 @@ const Login = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  autoComplete="current-password"
                   className="w-full bg-transparent border-0 border-b border-input pb-2 text-sm text-foreground focus:outline-none focus:border-primary transition-colors"
                 />
               </div>
@@ -155,9 +175,12 @@ const Login = () => {
           <div className="mt-10 space-y-6">
             <p className="text-center text-sm text-muted-foreground">
               Não tem uma conta?{' '}
-              <a href="#" className="font-semibold text-primary hover:text-primary-glow transition-colors">
+              <Link
+                to="/cadastro"
+                className="font-semibold text-primary hover:text-primary-glow transition-colors"
+              >
                 Solicitar acesso
-              </a>
+              </Link>
             </p>
 
             <div className="flex items-center justify-center gap-2 pt-4 border-t border-border">

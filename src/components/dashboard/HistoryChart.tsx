@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AreaChart, Area, CartesianGrid, ReferenceArea, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis, Legend,
@@ -31,6 +31,8 @@ interface HistoryChartProps {
   referenceLines?: Array<{ value: number; label: string; color: string }>;
   zoomable?: boolean;
   xDomain?: [number, number];
+  muted?: boolean;
+  lastSeenUtc?: string | null;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -55,6 +57,13 @@ function formatTooltipTime(ts: number, spanDays: number): string {
     day: '2-digit', month: '2-digit',
     hour: '2-digit', minute: '2-digit',
   });
+}
+
+function formatLastSeen(iso: string | null | undefined): string {
+  if (!iso) return 'sem registro';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return 'sem registro';
+  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
 }
 
 function niceMax(rawMax: number): number {
@@ -90,7 +99,7 @@ export function HistoryChart({
   title, unit, series, badges, windowKey, delayMs = 0,
   yDomain, lineType = 'monotone', tooltipNote, loading, referenceLines,
   chartHeightClass = 'h-[240px]', yAxisWidth = 36, zoomable = true,
-  xDomain,
+  xDomain, muted, lastSeenUtc,
 }: HistoryChartProps) {
 
   // ── zoom/pan state ─────────────────────────────────────────────────────────
@@ -107,7 +116,6 @@ export function HistoryChart({
   const [chartEl, setChartEl]                 = useState<HTMLDivElement | null>(null);
   const allDataRef                            = useRef<Record<string, number | null>[]>([]);
   const viewDomainRef                         = useRef<[number, number] | null>(null);
-  viewDomainRef.current = viewDomain;
 
   const resetZoom = useCallback(() => {
     setViewDomain(null);
@@ -115,6 +123,32 @@ export function HistoryChart({
     setSelEnd(null);
     isSelecting.current = false;
   }, []);
+
+  const { allTs, allData } = useMemo(() => {
+    const lookups = series.map((s) => {
+      const m = new Map<number, number>();
+      s.data.forEach((p) => m.set(p.t, p.v));
+      return m;
+    });
+    const mergedTs = Array.from(
+      new Set(series.flatMap((s) => s.data.map((p) => p.t))),
+    ).sort((a, b) => a - b);
+    const mergedData = mergedTs.map((t) => {
+      const row: Record<string, number | null> = { t };
+      series.forEach((s, i) => { row[s.key] = lookups[i].get(t) ?? null; });
+      return row;
+    });
+
+    return { allTs: mergedTs, allData: mergedData };
+  }, [series]);
+
+  useEffect(() => {
+    viewDomainRef.current = viewDomain;
+  }, [viewDomain]);
+
+  useEffect(() => {
+    allDataRef.current = allData;
+  }, [allData]);
 
   // Native non-passive wheel listener
   useEffect(() => {
@@ -157,23 +191,6 @@ export function HistoryChart({
       </div>
     );
   }
-
-  // ── data merge por timestamp (não por índice) ──────────────────────────────
-  // Remotas reportam em instantes diferentes → merge por ts, null para gaps.
-  const lookups = series.map((s) => {
-    const m = new Map<number, number>();
-    s.data.forEach((p) => m.set(p.t, p.v));
-    return m;
-  });
-  const allTs = Array.from(
-    new Set(series.flatMap((s) => s.data.map((p) => p.t))),
-  ).sort((a, b) => a - b);
-  const allData = allTs.map((t) => {
-    const row: Record<string, number | null> = { t };
-    series.forEach((s, i) => { row[s.key] = lookups[i].get(t) ?? null; });
-    return row;
-  });
-  allDataRef.current = allData;
 
   const spanDays = allData.length >= 2
     ? (viewDomain != null
@@ -296,7 +313,12 @@ export function HistoryChart({
     const { active, payload, label } = props;
     if (!active || !payload?.length) return null;
     if (isSelecting.current || isPanning.current) return null;
-    const accentColor = payload[0]?.stroke ?? 'hsl(var(--primary))';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const validEntries: any[] = payload.filter((e: any) => e.value != null);
+    if (validEntries.length === 0) return null;
+    const accentColor = validEntries.length === 1
+      ? (validEntries[0]?.stroke ?? 'hsl(var(--primary))')
+      : 'hsl(var(--border))';
     return (
       <div style={{
         background: 'hsl(var(--card))',
@@ -312,12 +334,14 @@ export function HistoryChart({
           {formatTooltipTime(Number(label), spanDays)}
         </p>
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        {payload.map((entry: any) => (
+        {validEntries.map((entry: any) => (
           <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: entry.stroke, flexShrink: 0 }} />
-            <span style={{ color: 'hsl(var(--muted-foreground))', flex: 1 }}>{entry.name}</span>
+            {validEntries.length > 1 && (
+              <span style={{ color: 'hsl(var(--muted-foreground))', flex: 1 }}>{entry.name}</span>
+            )}
             <span style={{ fontWeight: 700, color: 'hsl(var(--foreground))', fontVariantNumeric: 'tabular-nums' }}>
-              {(+(entry.value ?? 0)).toFixed(2)} {unit}
+              {(+entry.value).toFixed(2)} {unit}
             </span>
           </div>
         ))}
@@ -346,6 +370,12 @@ export function HistoryChart({
         <div>
           <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Histórico</p>
           <h3 className="mt-1 text-lg font-semibold text-foreground">{title}</h3>
+          {muted && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Sem sinal · últimos dados disponíveis:{' '}
+              <span className="tabular-nums text-foreground/70">{formatLastSeen(lastSeenUtc)}</span>
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap justify-end items-center gap-2">
           {badges?.map((b, i) => (
@@ -382,8 +412,9 @@ export function HistoryChart({
       <div
         ref={setChartEl}
         className={cn(
-          'w-full select-none',
+          'relative w-full select-none transition-all',
           chartHeightClass,
+          muted && 'opacity-55 grayscale',
           zoomable && (isPanningVisual ? 'cursor-grabbing' : 'cursor-grab'),
         )}
         onDoubleClick={handleDoubleClick}
@@ -391,6 +422,12 @@ export function HistoryChart({
         onMouseUp={handleMouseUp}
         onContextMenu={(e) => e.preventDefault()}
       >
+        {muted && (
+          <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-border bg-card/90 px-3 py-1 text-[11px] text-muted-foreground shadow-soft backdrop-blur-sm">
+            Sem sinal · últimos dados: <span className="tabular-nums text-foreground/70">{formatLastSeen(lastSeenUtc)}</span>
+          </div>
+        )}
+
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={data}

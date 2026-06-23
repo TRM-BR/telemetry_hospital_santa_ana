@@ -19,7 +19,7 @@ router = APIRouter(prefix="/users/pending", tags=["approvals"])
 async def list_pending(user_payload: ApproverOrAdminUser, db: DbDep):
     """Lista usuários aguardando aprovação, com contagem de votos já registrados."""
     result = await db.execute(
-        select(User).where(User.account_status == "pending_approval").order_by(User.created_at)
+        select(User).where(User.account_status == "pending").order_by(User.created_at)
     )
     pending_users = result.scalars().all()
 
@@ -58,7 +58,7 @@ async def approve_user(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    msg = "Aprovado." if new_status == "active" else "Voto registrado. Aguardando mais aprovações."
+    msg = "Aprovado." if new_status == "approved" else "Voto registrado."
     return {"detail": msg, "account_status": new_status}
 
 

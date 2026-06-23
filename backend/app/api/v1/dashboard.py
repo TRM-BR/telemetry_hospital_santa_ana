@@ -8,11 +8,13 @@ Sem pressão/vazão/consumo — hardware analógico não os produz.
 level_pct / percentual retornados são NOMINAIS (base altura_util 1,648 m), não escala do sensor.
 sensor_level_pct = campo técnico (% escala 0–4 m), não usado como headline.
 
-Acesso público (sem auth), como /health.
+Acesso protegido: requer usuário autenticado (approved). Usuários pending/rejected/inactive são
+bloqueados pelo JWT — o token só é emitido para status=approved.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import zoneinfo
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -20,7 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import DbDep
+from app.api.deps import CurrentUser, DbDep
 from app.processing.derivations import flow_from_level
 from app.processing.derivations import reservoir as res_calc
 from app.services import reservoir_config
@@ -77,7 +79,7 @@ _SQL_SERIES = text("""
     FROM derived_metrics dm
     WHERE dm.device_id = ANY(:device_ids)
       AND dm.metric_name = ANY(:metrics)
-      AND dm.derived_at_utc >= now() - :hours * INTERVAL '1 hour'
+      AND dm.derived_at_utc >= :from_dt AND dm.derived_at_utc < :to_dt
     ORDER BY dm.device_id, dm.metric_name, dm.derived_at_utc ASC
 """)
 
@@ -180,6 +182,7 @@ class InstallationDashboardResponse(BaseModel):
     volume_total_l: float = 0.0
     faltante_total_l: float = 0.0
     capacidade_total_l: float = 0.0
+    consumption_summary: Optional[ConsumptionSummary] = None
 
 
 class DeviceTopology(BaseModel):
@@ -207,9 +210,41 @@ class TopologyResponse(BaseModel):
     devices: list[DeviceTopology]
 
 
+class ShiftWindow(BaseModel):
+    label: str
+    start: str
+    end: str
+
+
+class ConsumptionSummary(BaseModel):
+    total_m3: float
+    period_1_m3: float
+    period_2_m3: float
+    period_1: ShiftWindow
+    period_2: ShiftWindow
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _parse_hhmm(s: str, default_min: int) -> int:
+    """Parse 'HH:MM' → minutes-of-day. Returns default_min on invalid input."""
+    try:
+        parts = s.strip().split(":")
+        if len(parts) != 2:
+            return default_min
+        h, m = int(parts[0]), int(parts[1])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            return default_min
+        return h * 60 + m
+    except (ValueError, AttributeError):
+        return default_min
+
+
+def _fmt_hhmm(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
 
 def _ts_z(dt: datetime) -> str:
     if dt.tzinfo is None:
@@ -271,12 +306,30 @@ async def _find_installation(db, slug: str):
 async def get_dashboard(
     slug: str,
     db: DbDep,
+    _user: CurrentUser,
     hours: int = Query(24, ge=1, le=720),
+    shift_start: str = Query("07:00"),
+    shift_end: str = Query("19:00"),
+    start_date: str | None = Query(None, description="YYYY-MM-DD (America/Sao_Paulo)"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD (America/Sao_Paulo)"),
 ):
     """Snapshot real por device + série temporal nas últimas `hours` horas."""
     inst = await _find_installation(db, slug)
     if not inst:
         raise HTTPException(status_code=404, detail="Instalação não encontrada")
+
+    _tz_window = zoneinfo.ZoneInfo(_FULL_ESTIMATE_TZ)
+    if start_date and end_date:
+        try:
+            from_dt = datetime.fromisoformat(start_date).replace(tzinfo=_tz_window)
+            to_dt = datetime.fromisoformat(end_date).replace(tzinfo=_tz_window) + timedelta(days=1)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Datas inválidas (use YYYY-MM-DD)")
+        if from_dt >= to_dt or (to_dt - from_dt) > timedelta(days=31):
+            raise HTTPException(status_code=422, detail="Intervalo inválido (1 a 31 dias, início ≤ fim)")
+    else:
+        to_dt = datetime.now(tz=timezone.utc)
+        from_dt = to_dt - timedelta(hours=hours)
 
     device_rows = (await db.execute(_SQL_DEVICES, {"installation_id": inst.id})).fetchall()
 
@@ -305,7 +358,7 @@ async def get_dashboard(
     # Série temporal por (device, metric)
     series_rows = (await db.execute(
         _SQL_SERIES,
-        {"device_ids": device_ids, "metrics": list(_SERIES_METRICS), "hours": hours},
+        {"device_ids": device_ids, "metrics": list(_SERIES_METRICS), "from_dt": from_dt, "to_dt": to_dt},
     )).fetchall()
     series_by_device: dict[int, dict[str, list[DashSeriesPoint]]] = {}
     for device_id, metric_name, value, ts in series_rows:
@@ -325,6 +378,13 @@ async def get_dashboard(
     # Acumuladores para totais por grupo distinto (sem dupla contagem)
     # group_key → {"cfg": ReservoirConfig, "tank_pcts": list[float]}
     group_aggregates: dict[str, dict] = {}
+
+    # Consumo acumulado por turno (m³)
+    shift_start_min = _parse_hhmm(shift_start, 7 * 60)
+    shift_end_min = _parse_hhmm(shift_end, 19 * 60)
+    _tz = zoneinfo.ZoneInfo(_FULL_ESTIMATE_TZ)
+    cons_p1_l = 0.0
+    cons_p2_l = 0.0
 
     for i, r in enumerate(device_rows):
         last_seen: Optional[datetime] = r.last_seen_utc
@@ -375,10 +435,26 @@ async def get_dashboard(
                 DashSeriesPoint(t=t, v=v)
                 for t, v in flow_from_level.consumption_series(_pts, cfg.group_capacity_l)
             ]
+            hourly_buckets = list(flow_from_level.net_flow_hourly(_pts, cfg.group_capacity_l, _FULL_ESTIMATE_TZ))
             series_out["flow_hourly_lph"] = [
-                DashSeriesPoint(t=t, v=v)
-                for t, v in flow_from_level.net_flow_hourly(_pts, cfg.group_capacity_l, _FULL_ESTIMATE_TZ)
+                DashSeriesPoint(t=t, v=v) for t, v in hourly_buckets
             ]
+            # Accumulate consumption for shift breakdown (queda retificada por turno)
+            for bucket_end_ms, delta_l in hourly_buckets:
+                consumed = max(0.0, -delta_l)
+                if consumed <= 0.0:
+                    continue
+                bucket_start_ms = bucket_end_ms - 3_600_000
+                local_dt = datetime.fromtimestamp(bucket_start_ms / 1000, tz=_tz)
+                minute_of_day = local_dt.hour * 60 + local_dt.minute
+                if shift_start_min < shift_end_min:
+                    in_p1 = shift_start_min <= minute_of_day < shift_end_min
+                else:
+                    in_p1 = minute_of_day >= shift_start_min or minute_of_day < shift_end_min
+                if in_p1:
+                    cons_p1_l += consumed
+                else:
+                    cons_p2_l += consumed
 
         # Acumulação para totais por grupo distinto
         # Antes da migration: cada device = grupo único por índice
@@ -441,6 +517,22 @@ async def get_dashboard(
         faltante_total_l += cfg_g.group_capacity_l - g_vol
         capacidade_total_l += cfg_g.group_capacity_l
 
+    consumption_summary = ConsumptionSummary(
+        total_m3=round((cons_p1_l + cons_p2_l) / 1000, 2),
+        period_1_m3=round(cons_p1_l / 1000, 2),
+        period_2_m3=round(cons_p2_l / 1000, 2),
+        period_1=ShiftWindow(
+            label=f"{shift_start}–{shift_end}",
+            start=shift_start,
+            end=shift_end,
+        ),
+        period_2=ShiftWindow(
+            label=f"{shift_end}–{shift_start}",
+            start=shift_end,
+            end=shift_start,
+        ),
+    )
+
     return InstallationDashboardResponse(
         installation_slug=inst.slug,
         installation_name=inst.name,
@@ -452,11 +544,12 @@ async def get_dashboard(
         volume_total_l=round(volume_total_l, 1),
         faltante_total_l=round(faltante_total_l, 1),
         capacidade_total_l=round(capacidade_total_l, 1),
+        consumption_summary=consumption_summary,
     )
 
 
 @router.get("/installations/{slug}/topology", response_model=TopologyResponse)
-async def get_topology(slug: str, db: DbDep):
+async def get_topology(slug: str, db: DbDep, _user: CurrentUser):
     """Estado por device analógico registrado na instalação."""
     inst = await _find_installation(db, slug)
     if not inst:

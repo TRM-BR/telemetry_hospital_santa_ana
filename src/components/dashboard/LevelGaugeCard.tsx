@@ -193,9 +193,10 @@ function StatusChip({ label, tone }: ChipDef) {
 export interface LevelGaugeCardProps {
   device: DashDevice;
   groupIndex: number;
+  signalLost?: boolean;
 }
 
-export function LevelGaugeCard({ device, groupIndex }: LevelGaugeCardProps) {
+export function LevelGaugeCard({ device, groupIndex, signalLost }: LevelGaugeCardProps) {
   const pct      = device.latest.level_pct ?? 0;
   const animated = useCountUp(pct);
   const estado   = getEstado(device.latest.level_pct);
@@ -216,14 +217,24 @@ export function LevelGaugeCard({ device, groupIndex }: LevelGaugeCardProps) {
             Grupo {groupIndex + 1} · Reservatórios
           </h3>
         </div>
-        <p className="text-[11px] text-muted-foreground text-right">
-          Última leitura:{' '}
-          <span className="text-foreground tabular-nums">{fmtDt(device.last_seen_utc)}</span>
-        </p>
+        <div className="flex flex-col items-end gap-1.5">
+          {signalLost && (
+            <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-700">
+              Sem sinal
+            </span>
+          )}
+          <p className="text-[11px] text-muted-foreground text-right">
+            Última leitura:{' '}
+            <span className="text-foreground tabular-nums">{fmtDt(device.last_seen_utc)}</span>
+          </p>
+        </div>
       </div>
 
       {/* Body: gauge+chips | stat-list */}
-      <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-6 items-start">
+      <div className={cn(
+        'grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-6 items-start',
+        signalLost && 'opacity-60 grayscale',
+      )}>
         {/* Esquerda: gauge + % + altura + chips empilhados */}
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-4">

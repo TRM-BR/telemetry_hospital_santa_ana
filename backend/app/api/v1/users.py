@@ -203,7 +203,7 @@ async def list_users(
     Lista usuários. Disponível apenas para admin.
     """
     result = await db.execute(
-        select(User).where(User.account_status != "pending_approval").order_by(User.username)
+        select(User).where(User.account_status != "pending").order_by(User.username)
     )
     users = result.scalars().all()
 
