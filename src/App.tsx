@@ -2,10 +2,22 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import type { ReactElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { isAuthenticated } from './services/auth';
+import { RequireRole } from './components/RequireRole';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false,
+    },
+  },
+});
 
 import Login from './pages/Login';
+import Cadastro from './pages/Cadastro';
+import CadastroConfirmar from './pages/CadastroConfirmar';
+import EsqueciSenha from './pages/EsqueciSenha';
+import RedefinirSenha from './pages/RedefinirSenha';
+import Aprovacoes from './pages/Aprovacoes';
 import MapPage from './pages/Map';
 import Installation from './pages/Installation';
 import Dashboard from './pages/Dashboard';
@@ -20,10 +32,14 @@ function RequireAuth({ children }: { children: ReactElement }) {
   return children;
 }
 
+const PUBLIC_PATHS = ['/', '/cadastro', '/cadastro/confirmar', '/esqueci-senha', '/redefinir-senha'];
+
 function AppContent() {
   const location = useLocation();
   const { width } = useAppSidebar();
-  const isPublicPage = location.pathname === '/';
+  const isPublicPage = PUBLIC_PATHS.some(
+    (p) => location.pathname === p || location.pathname.startsWith(p + '/'),
+  );
 
   return (
     <>
@@ -37,7 +53,24 @@ function AppContent() {
         }}
       >
         <Routes>
+          {/* Public routes */}
           <Route path="/" element={<Login />} />
+          <Route path="/cadastro" element={<Cadastro />} />
+          <Route path="/cadastro/confirmar" element={<CadastroConfirmar />} />
+          <Route path="/esqueci-senha" element={<EsqueciSenha />} />
+          <Route path="/redefinir-senha" element={<RedefinirSenha />} />
+
+          {/* Approvals — approver and admin only */}
+          <Route
+            path="/aprovacoes"
+            element={
+              <RequireRole roles={['approver', 'admin']}>
+                <Aprovacoes />
+              </RequireRole>
+            }
+          />
+
+          {/* Protected routes — any authenticated user */}
           <Route
             path="/menu"
             element={

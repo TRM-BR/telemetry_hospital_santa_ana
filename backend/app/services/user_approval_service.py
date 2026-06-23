@@ -1,10 +1,10 @@
 """
 app/services/user_approval_service.py — Regras de aprovação de cadastro.
 
-Matriz de aprovação:
-  - viewer  : 1 voto de admin OU approver → aprova imediatamente.
-  - approver: 1 voto de admin → aprova; 2 votos distintos de approver → aprova.
-  - Qualquer rejeição de admin ou approver → rejeita imediatamente.
+Matriz de aprovação (simplificada):
+  - viewer  : 1 voto de approver OU admin → aprova imediatamente como viewer.
+  - Qualquer rejeição de approver ou admin → rejeita imediatamente.
+  - Approver não pode promover outro approver (promoção é exclusividade do admin via CLI).
 
 Retorna o novo account_status do usuário alvo após o voto.
 """
@@ -12,11 +12,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
 from app.db.models.user_approval import UserApproval
+from app.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 async def cast_vote(
@@ -35,6 +38,7 @@ async def cast_vote(
     """
     approver_role: str = approver.get("role", "")
     approver_id: int = int(approver["sub"])
+    approver_username: str = approver.get("username", str(approver_id))
 
     if approver_role not in ("admin", "approver"):
         raise ValueError("Sem permissão para votar.")
@@ -44,7 +48,7 @@ async def cast_vote(
     target = result.scalar_one_or_none()
     if target is None:
         raise ValueError("Usuário não encontrado.")
-    if target.account_status != "pending_approval":
+    if target.account_status != "pending":
         raise ValueError("Este usuário não está aguardando aprovação.")
 
     # Impede auto-aprovação
@@ -69,57 +73,35 @@ async def cast_vote(
         note=note,
     )
     db.add(vote)
-    await db.flush()  # garante id antes de contar votos
+    await db.flush()
 
-    # ── Regras de rejeição ────────────────────────────────────────────────────
+    # ── Rejeição ──────────────────────────────────────────────────────────────
     if action == "reject":
         target.account_status = "rejected"
         target.updated_at = datetime.now(timezone.utc)
         await db.commit()
+        logger.info(
+            "user.approval.rejected",
+            target_user_id=target_user_id,
+            target_username=target.username,
+            approver_id=approver_id,
+            approver_username=approver_username,
+            approver_role=approver_role,
+        )
         return "rejected"
 
-    # ── Regras de aprovação ───────────────────────────────────────────────────
-    requested = target.requested_role or "viewer"
-
-    # viewer: qualquer aprovador basta
-    if requested == "viewer":
-        target.account_status = "active"
-        target.role = "viewer"
-        target.updated_at = datetime.now(timezone.utc)
-        await db.commit()
-        return "active"
-
-    # approver: admin basta; 2 approvers também
-    if requested == "approver":
-        if approver_role == "admin":
-            target.account_status = "active"
-            target.role = "approver"
-            target.updated_at = datetime.now(timezone.utc)
-            await db.commit()
-            return "active"
-
-        # Conta votos de aprovação de approvers (incluindo o que acabou de ser inserido)
-        count_result = await db.execute(
-            select(func.count()).where(
-                UserApproval.target_user_id == target_user_id,
-                UserApproval.action == "approve",
-            ).select_from(UserApproval)
-            .join(User, User.id == UserApproval.approver_id)
-            .where(User.role == "approver")
-        )
-        approver_votes = count_result.scalar() or 0
-
-        if approver_votes >= 2:
-            target.account_status = "active"
-            target.role = "approver"
-            target.updated_at = datetime.now(timezone.utc)
-            await db.commit()
-            return "active"
-
-        # Ainda pendente
-        await db.commit()
-        return "pending_approval"
-
-    # Outros roles solicitados não são aprovados via este fluxo
+    # ── Aprovação: 1 voto (approver ou admin) → viewer approved ───────────────
+    target.account_status = "approved"
+    target.role = "viewer"
+    target.updated_at = datetime.now(timezone.utc)
     await db.commit()
-    return "pending_approval"
+    logger.info(
+        "user.approval.approved",
+        target_user_id=target_user_id,
+        target_username=target.username,
+        new_role="viewer",
+        approver_id=approver_id,
+        approver_username=approver_username,
+        approver_role=approver_role,
+    )
+    return "approved"

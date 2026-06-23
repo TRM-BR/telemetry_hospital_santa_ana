@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
@@ -37,7 +37,7 @@ class RegisterRequest(BaseModel):
     username: str
     email: EmailStr
     password: str
-    requested_role: Literal["viewer", "approver"] = "viewer"
+    # requested_role is intentionally absent: all public registrations become viewer pending.
 
     @field_validator("username")
     @classmethod

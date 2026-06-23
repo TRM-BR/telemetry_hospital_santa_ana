@@ -1,31 +1,24 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AlertItem } from '../types/alerts';
-import { mockAlerts } from '../mocks/alertsMock';
+import { api } from '../services/api';
 
 const QUERY_KEY = ['alerts'] as const;
 
+const MOCKS_ENABLED = import.meta.env.VITE_ENABLE_MOCKS === 'true';
+
 async function fetchAlerts(): Promise<AlertItem[]> {
-  try {
-    const token = localStorage.getItem('hsa.auth.token');
-    const res = await fetch('/api/v1/alerts?active_only=false', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    // TODO: remover fallback quando motor de alertas estiver ativo
-    return Array.isArray(json?.alerts) ? json.alerts : mockAlerts;
-  } catch {
+  if (MOCKS_ENABLED) {
+    const { mockAlerts } = await import('../mocks/alertsMock');
     return mockAlerts;
   }
+  const json = await api<{ alerts?: AlertItem[] }>('/alerts?active_only=false');
+  if (!Array.isArray(json?.alerts)) return [];
+  return json.alerts;
 }
 
 async function setAlertViewed(id: string, viewed: boolean): Promise<void> {
-  const token = localStorage.getItem('hsa.auth.token');
   const method = viewed ? 'POST' : 'DELETE';
-  await fetch(`/api/v1/alerts/${id}/viewed`, {
-    method,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  await api(`/alerts/${id}/viewed`, { method });
 }
 
 export function useAlerts() {

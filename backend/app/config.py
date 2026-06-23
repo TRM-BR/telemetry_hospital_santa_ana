@@ -214,6 +214,18 @@ class Settings(BaseSettings):
     api_jwt_algorithm: str = Field("HS256")
     api_access_token_expire_minutes: int = Field(480)
 
+    # ── CORS ──────────────────────────────────────────────────────────────────
+    # Em produção, definir TELEMETRY_CORS_ORIGINS como lista de origens permitidas.
+    # Ex.: TELEMETRY_CORS_ORIGINS=["https://hospital-santa-ana.trmbrasil.cloud"]
+    # Em dev/hml pode-se usar ["*"] mas nunca em prod.
+    cors_origins: list[str] = Field(
+        default_factory=lambda: ["*"],
+        description=(
+            "Origens CORS permitidas. Em produção, especificar domínios exatos. "
+            "Env: TELEMETRY_CORS_ORIGINS (JSON list)."
+        ),
+    )
+
     # ── Email / SMTP ──────────────────────────────────────────────────────────
     # Quando MAIL_HOST estiver vazio, ConsoleEmailSender é usado (dev/test).
     mail_host: str = Field("", description="Servidor SMTP. Vazio → log no console.")

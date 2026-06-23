@@ -1,10 +1,11 @@
 import { useState, createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
-// import { LogOut, Map as MapIcon, AlertTriangle, Radio, Pin, CloudRain } from 'lucide-react';
-import { LogOut, Map as MapIcon, AlertTriangle, Radio, Pin } from 'lucide-react';
+import { LogOut, Map as MapIcon, AlertTriangle, Radio, Pin, CheckSquare } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/cn';
 import { logout } from '../services/auth';
+import { useAuth } from '../hooks/useAuth';
 
 const SIDEBAR_COLLAPSED = 80;
 const SIDEBAR_EXPANDED = 256;
@@ -45,21 +46,32 @@ export function useAppSidebar(): AppSidebarContextType {
   return ctx;
 }
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { to: '/menu',    label: 'Menu',    Icon: MapIcon       },
   { to: '/remotas', label: 'Remotas', Icon: Radio         },
-  // { to: '/meteorologia', label: 'Clima', Icon: CloudRain  }, // oculto — rota/página mantidas
+  // { to: '/meteorologia', label: 'Clima', Icon: CloudRain  },
   { to: '/alertas', label: 'Avisos',  Icon: AlertTriangle },
-];
+] as const;
+
+const APPROVER_NAV_ITEMS = [
+  { to: '/aprovacoes', label: 'Aprovações', Icon: CheckSquare },
+] as const;
 
 export function AppSidebar() {
   const { expanded, pinned, setExpanded, setPinned, width } = useAppSidebar();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
+  const { role } = useAuth();
   const isOpen = expanded || pinned;
 
+  const navItems = [
+    ...BASE_NAV_ITEMS,
+    ...(role === 'approver' || role === 'admin' ? APPROVER_NAV_ITEMS : []),
+  ];
+
   function handleLogout() {
-    logout();
+    logout(queryClient);
     navigate('/', { replace: true });
   }
 
@@ -115,7 +127,7 @@ export function AppSidebar() {
 
       {/* Nav */}
       <nav className="flex-1 space-y-2 p-4">
-        {NAV_ITEMS.map(({ to, label, Icon }) => {
+        {navItems.map(({ to, label, Icon }) => {
           const active = location.pathname === to || location.pathname.startsWith(to + '/');
           return (
             <button

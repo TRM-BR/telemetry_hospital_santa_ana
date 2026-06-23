@@ -8,7 +8,8 @@ Sem pressão/vazão/consumo — hardware analógico não os produz.
 level_pct / percentual retornados são NOMINAIS (base altura_util 1,648 m), não escala do sensor.
 sensor_level_pct = campo técnico (% escala 0–4 m), não usado como headline.
 
-Acesso público (sem auth), como /health.
+Acesso protegido: requer usuário autenticado (approved). Usuários pending/rejected/inactive são
+bloqueados pelo JWT — o token só é emitido para status=approved.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import DbDep
+from app.api.deps import CurrentUser, DbDep
 from app.processing.derivations import flow_from_level
 from app.processing.derivations import reservoir as res_calc
 from app.services import reservoir_config
@@ -271,6 +272,7 @@ async def _find_installation(db, slug: str):
 async def get_dashboard(
     slug: str,
     db: DbDep,
+    _user: CurrentUser,
     hours: int = Query(24, ge=1, le=720),
 ):
     """Snapshot real por device + série temporal nas últimas `hours` horas."""
@@ -456,7 +458,7 @@ async def get_dashboard(
 
 
 @router.get("/installations/{slug}/topology", response_model=TopologyResponse)
-async def get_topology(slug: str, db: DbDep):
+async def get_topology(slug: str, db: DbDep, _user: CurrentUser):
     """Estado por device analógico registrado na instalação."""
     inst = await _find_installation(db, slug)
     if not inst:
