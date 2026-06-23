@@ -251,6 +251,7 @@ const Dashboard = () => {
             {devices.map((d, i) => {
               const series = perDeviceLevelPct[i];
               if (!series || series.length === 0) return null;
+              const signalLost = isSignalLost(d.last_seen_utc);
               return (
                 <HistoryChart
                   key={d.device_id}
@@ -262,7 +263,8 @@ const Dashboard = () => {
                   series={series}
                   chartHeightClass={CHART_HEIGHT}
                   delayMs={i * 80}
-                  muted={isSignalLost(d.last_seen_utc)}
+                  muted={signalLost}
+                  lastSeenUtc={d.last_seen_utc}
                 />
               );
             })}
@@ -307,6 +309,7 @@ const Dashboard = () => {
               {devices.map((d, i) => {
                 const series = perDeviceFlowHourly[i];
                 if (!series || series.length === 0) return null;
+                const signalLost = isSignalLost(d.last_seen_utc);
                 return (
                   <FlowBarChart
                     key={d.device_id}
@@ -316,7 +319,8 @@ const Dashboard = () => {
                     windowKey={windowKey}
                     chartHeightClass={CHART_HEIGHT}
                     delayMs={i * 80}
-                    muted={isSignalLost(d.last_seen_utc)}
+                    muted={signalLost}
+                    lastSeenUtc={d.last_seen_utc}
                   />
                 );
               })}
@@ -327,6 +331,7 @@ const Dashboard = () => {
               {devices.map((d, i) => {
                 const series = perDeviceFlowNet[i];
                 if (!series || series.length === 0) return null;
+                const signalLost = isSignalLost(d.last_seen_utc);
                 return (
                   <HistoryChart
                     key={d.device_id}
@@ -338,7 +343,8 @@ const Dashboard = () => {
                     series={series}
                     chartHeightClass={CHART_HEIGHT}
                     delayMs={i * 80}
-                    muted={isSignalLost(d.last_seen_utc)}
+                    muted={signalLost}
+                    lastSeenUtc={d.last_seen_utc}
                   />
                 );
               })}

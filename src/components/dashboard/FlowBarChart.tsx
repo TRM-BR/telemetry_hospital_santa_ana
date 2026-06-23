@@ -14,6 +14,7 @@ interface FlowBarChartProps {
   delayMs?: number;
   chartHeightClass?: string;
   muted?: boolean;
+  lastSeenUtc?: string | null;
 }
 
 function formatTime(ts: number, win: WindowKey) {
@@ -29,6 +30,13 @@ function formatTooltipTime(ts: number): string {
     day: '2-digit', month: '2-digit',
     hour: '2-digit', minute: '2-digit',
   });
+}
+
+function formatLastSeen(iso: string | null | undefined): string {
+  if (!iso) return 'sem registro';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return 'sem registro';
+  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
 }
 
 function yTickFmt(v: number): string {
@@ -48,6 +56,7 @@ export function FlowBarChart({
   delayMs = 0,
   chartHeightClass = 'h-[280px]',
   muted,
+  lastSeenUtc,
 }: FlowBarChartProps) {
   const chartData = data.map((p) => ({ t: p.t, v: p.v }));
 
@@ -93,25 +102,23 @@ export function FlowBarChart({
 
   return (
     <div
-      className={cn(
-        'rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in',
-        muted && 'opacity-60 grayscale transition-all',
-      )}
+      className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in"
       style={{ animationDelay: `${delayMs}ms` }}
     >
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
           <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Vazão</p>
           <h3 className="mt-1 text-lg font-semibold text-foreground">{title}</h3>
+          {muted && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Sem sinal · últimos dados disponíveis:{' '}
+              <span className="tabular-nums text-foreground/70">{formatLastSeen(lastSeenUtc)}</span>
+            </p>
+          )}
         </div>
-        {muted && (
-          <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-700">
-            Sem sinal
-          </span>
-        )}
       </div>
 
-      <div className={`w-full ${chartHeightClass}`}>
+      <div className={cn('w-full transition-all', chartHeightClass, muted && 'opacity-55 grayscale')}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
             <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 4" vertical={false} />
