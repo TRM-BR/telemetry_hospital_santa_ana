@@ -148,7 +148,7 @@ export function ConsumptionSummaryChip({
         onClick={handleToggleOpen}
         aria-expanded={open}
         className={cn(
-          'grid w-full grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-card px-3.5 py-2 text-sm transition-colors sm:w-[24rem]',
+          'grid w-full grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-card px-3.5 py-2 text-sm transition-colors sm:w-[32rem]',
           open
             ? 'border-primary/40 text-primary'
             : 'border-border text-foreground hover:border-primary/40 hover:text-primary',
