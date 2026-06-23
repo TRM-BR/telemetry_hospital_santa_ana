@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Switch } from '../ui/Switch';
 import type { WindowKey, FilterMode, ConsumptionSummary } from '../../types/telemetry';
 import { WINDOW_OPTIONS } from '../../constants/dashboard';
@@ -16,9 +17,23 @@ interface FiltersBarProps {
   onShiftChange?: (start: string, end: string) => void;
 }
 
+function formatDateInputValue(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
 export function FiltersBar(p: FiltersBarProps) {
+  const [periodDefaults] = useState(() => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+
+    return {
+      start: formatDateInputValue(start),
+      end: formatDateInputValue(end),
+    };
+  });
+
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in">
+    <div className="relative z-20 rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in">
       <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">
         Filtros de visualização
       </p>
@@ -70,7 +85,7 @@ export function FiltersBar(p: FiltersBarProps) {
               <input
                 type="date"
                 className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
-                defaultValue={new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}
+                defaultValue={periodDefaults.start}
               />
             </div>
             <div>
@@ -78,7 +93,7 @@ export function FiltersBar(p: FiltersBarProps) {
               <input
                 type="date"
                 className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
-                defaultValue={new Date().toISOString().slice(0, 10)}
+                defaultValue={periodDefaults.end}
               />
             </div>
           </div>
