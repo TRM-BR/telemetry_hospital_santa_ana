@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Settings } from 'lucide-react';
-import { cn } from '../../lib/cn';
 import { SHIFT_PRESETS } from '../../constants/dashboard';
+import { cn } from '../../lib/cn';
 import type { ConsumptionSummary } from '../../types/telemetry';
 
 interface ConsumptionSummaryChipProps {
@@ -11,8 +11,152 @@ interface ConsumptionSummaryChipProps {
   onApply: (start: string, end: string) => void;
 }
 
+interface ShiftProgress {
+  activePeriod: 1 | 2;
+  period1Fill: number;
+  period2Fill: number;
+}
+
+interface ShiftStatProps {
+  tag: string;
+  windowLabel: string;
+  value?: number;
+  fill: number;
+  active: boolean;
+}
+
+const SAO_PAULO_TIME_ZONE = 'America/Sao_Paulo';
+const MINUTES_PER_DAY = 24 * 60;
+const TIME_PROGRESS_TITLE = 'Progresso do turno (tempo), não consumo';
+
 function shiftLabel(start: string, end: string) {
-  return `${start} – ${end}`;
+  return `${start}–${end}`;
+}
+
+function parseTimeToMinutes(time: string) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(time);
+  if (!match) return 0;
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return 0;
+
+  return ((hour * 60 + minute) % MINUTES_PER_DAY + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+}
+
+function mod(value: number, base: number) {
+  return ((value % base) + base) % base;
+}
+
+function clamp01(value: number) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function getSaoPauloMinuteOfDay(nowMs: number) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: SAO_PAULO_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+  }).formatToParts(new Date(nowMs));
+
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
+  const second = Number(parts.find((part) => part.type === 'second')?.value ?? 0);
+
+  return hour * 60 + minute + second / 60;
+}
+
+function getShiftProgress(start: string, end: string, nowMs: number): ShiftProgress {
+  const startMin = parseTimeToMinutes(start);
+  const endMin = parseTimeToMinutes(end);
+  const nowMin = getSaoPauloMinuteOfDay(nowMs);
+  const dur1 = mod(endMin - startMin, MINUTES_PER_DAY) || MINUTES_PER_DAY;
+  const dur2 = MINUTES_PER_DAY - dur1;
+
+  if (startMin === endMin) {
+    return {
+      activePeriod: 1,
+      period1Fill: clamp01(mod(nowMin - startMin, MINUTES_PER_DAY) / dur1),
+      period2Fill: 0,
+    };
+  }
+
+  const inPeriod1 = startMin < endMin
+    ? startMin <= nowMin && nowMin < endMin
+    : nowMin >= startMin || nowMin < endMin;
+
+  if (inPeriod1) {
+    return {
+      activePeriod: 1,
+      period1Fill: clamp01(mod(nowMin - startMin, MINUTES_PER_DAY) / dur1),
+      period2Fill: 1,
+    };
+  }
+
+  return {
+    activePeriod: 2,
+    period1Fill: 1,
+    period2Fill: dur2 > 0 ? clamp01(mod(nowMin - endMin, MINUTES_PER_DAY) / dur2) : 0,
+  };
+}
+
+function formatM3(value?: number) {
+  if (value == null || !Number.isFinite(value)) return '—';
+
+  return `${value.toLocaleString('pt-BR', {
+    maximumFractionDigits: 2,
+  })} m³`;
+}
+
+function ShiftStat({ tag, windowLabel, value, fill, active }: ShiftStatProps) {
+  const fillPercent = Math.round(clamp01(fill) * 100);
+
+  return (
+    <div className="min-w-0 text-left">
+      <div className="mb-1.5 flex min-h-4 items-center gap-1.5">
+        <span className={cn(
+          'text-[10px] font-semibold uppercase tracking-[0.16em]',
+          active ? 'text-primary' : 'text-muted-foreground',
+        )}>
+          {tag}
+        </span>
+        {active && (
+          <span className="rounded-full border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-primary">
+            em curso
+          </span>
+        )}
+      </div>
+
+      <p className="truncate text-[10px] leading-none text-muted-foreground" title={windowLabel}>
+        {windowLabel}
+      </p>
+      <p className="mt-1 font-bold tabular-nums text-foreground text-[15px] leading-snug">
+        {formatM3(value)}
+      </p>
+
+      <div
+        className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary"
+        title={TIME_PROGRESS_TITLE}
+        role="progressbar"
+        aria-label={`${tag}: ${TIME_PROGRESS_TITLE}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={fillPercent}
+      >
+        <div
+          className={cn(
+            'h-full rounded-full transition-[width] duration-700 ease-out',
+            active ? 'bg-primary' : 'bg-muted-foreground/35',
+          )}
+          style={{ width: `${fillPercent}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 export function ConsumptionSummaryChip({
@@ -24,17 +168,17 @@ export function ConsumptionSummaryChip({
   const [open, setOpen] = useState(false);
   const [draftStart, setDraftStart] = useState(shiftStart);
   const [draftEnd, setDraftEnd] = useState(shiftEnd);
+  const [tick, setTick] = useState(() => Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Sync drafts when props change (e.g. after apply)
   useEffect(() => {
-    setDraftStart(shiftStart);
-    setDraftEnd(shiftEnd);
-  }, [shiftStart, shiftEnd]);
+    const intervalId = window.setInterval(() => setTick(Date.now()), 30_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
-  // Click-outside closes popover
   useEffect(() => {
     if (!open) return;
+
     function handle(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -42,6 +186,7 @@ export function ConsumptionSummaryChip({
         setDraftEnd(shiftEnd);
       }
     }
+
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, [open, shiftStart, shiftEnd]);
@@ -57,44 +202,63 @@ export function ConsumptionSummaryChip({
     setOpen(false);
   }
 
-  // Complementary period: end → start
+  function handleToggleOpen() {
+    if (!open) {
+      setDraftStart(shiftStart);
+      setDraftEnd(shiftEnd);
+    }
+
+    setOpen((v) => !v);
+  }
+
+  const progress = getShiftProgress(shiftStart, shiftEnd, tick);
+  const p1WindowLabel = summary?.period_1.label ?? shiftLabel(shiftStart, shiftEnd);
+  const p2WindowLabel = summary?.period_2.label ?? shiftLabel(shiftEnd, shiftStart);
   const p2Start = draftEnd;
   const p2End = draftStart;
 
-  const totalLabel = summary != null
-    ? `${summary.total_m3.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} m³`
-    : '—';
-
   return (
-    <div ref={containerRef} className="relative">
-      {/* Chip button */}
+    <div ref={containerRef} className="relative w-full sm:w-auto">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleToggleOpen}
+        aria-expanded={open}
         className={cn(
-          'inline-flex items-center gap-2.5 rounded-xl border bg-card px-3.5 py-2 text-sm transition-colors',
+          'grid w-full grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-card px-3.5 py-2.5 text-sm transition-colors sm:w-[24rem]',
           open
             ? 'border-primary/40 text-primary'
             : 'border-border text-foreground hover:border-primary/40 hover:text-primary',
         )}
       >
-        <div className="text-left leading-tight">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-            Consumo acumulado
-          </p>
-          <p className="font-bold tabular-nums text-foreground text-[15px] leading-snug">
-            {totalLabel}
-          </p>
-          <p className="text-[10px] text-muted-foreground">
-            {shiftLabel(shiftStart, shiftEnd)} / {shiftLabel(shiftEnd, shiftStart)}
-          </p>
-        </div>
-        <Settings className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+        <ShiftStat
+          tag="1º turno"
+          windowLabel={p1WindowLabel}
+          value={summary?.period_1_m3}
+          fill={progress.period1Fill}
+          active={progress.activePeriod === 1}
+        />
+
+        <span className="h-full min-h-12 w-px bg-border" aria-hidden="true" />
+
+        <ShiftStat
+          tag="2º turno"
+          windowLabel={p2WindowLabel}
+          value={summary?.period_2_m3}
+          fill={progress.period2Fill}
+          active={progress.activePeriod === 2}
+        />
+
+        <Settings
+          className={cn(
+            'h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform duration-300',
+            open && 'rotate-90 text-primary',
+          )}
+          aria-hidden="true"
+        />
       </button>
 
-      {/* Popover */}
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-2xl border border-border bg-card p-4 shadow-soft">
+        <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-border bg-card p-4 shadow-soft animate-drop-in">
           <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-1">
             Turnos
           </p>
@@ -102,7 +266,6 @@ export function ConsumptionSummaryChip({
             Configurar períodos de consumo
           </h4>
 
-          {/* Time inputs */}
           <div className="space-y-3 mb-4">
             <div className="flex items-center gap-3">
               <div className="flex-1">
@@ -126,7 +289,6 @@ export function ConsumptionSummaryChip({
             </div>
           </div>
 
-          {/* Preview */}
           <div className="rounded-xl bg-secondary/60 border border-border px-3 py-2 mb-4 space-y-1">
             <p className="text-[11px] text-muted-foreground">
               <span className="text-foreground font-medium">1º período:</span>{' '}
@@ -138,13 +300,15 @@ export function ConsumptionSummaryChip({
             </p>
           </div>
 
-          {/* Presets */}
           <div className="flex flex-wrap gap-1.5 mb-4">
             {SHIFT_PRESETS.map((p) => (
               <button
                 key={p.label}
                 type="button"
-                onClick={() => { setDraftStart(p.start); setDraftEnd(p.end); }}
+                onClick={() => {
+                  setDraftStart(p.start);
+                  setDraftEnd(p.end);
+                }}
                 className={cn(
                   'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
                   draftStart === p.start && draftEnd === p.end
@@ -157,7 +321,6 @@ export function ConsumptionSummaryChip({
             ))}
           </div>
 
-          {/* Actions */}
           <div className="flex gap-2">
             <button
               type="button"
