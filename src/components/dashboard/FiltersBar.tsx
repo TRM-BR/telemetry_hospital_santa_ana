@@ -22,6 +22,7 @@ function formatDateInputValue(date: Date) {
 }
 
 export function FiltersBar(p: FiltersBarProps) {
+  const [consumptionPopoverOpen, setConsumptionPopoverOpen] = useState(false);
   const [periodDefaults] = useState(() => {
     const end = new Date();
     const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
@@ -33,83 +34,93 @@ export function FiltersBar(p: FiltersBarProps) {
   });
 
   return (
-    <div className="relative z-20 rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in">
-      <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">
-        Filtros de visualização
-      </p>
+    <div className="relative z-20">
+      {consumptionPopoverOpen && (
+        <div
+          className="fixed inset-0 z-0 bg-white/40 backdrop-blur-[1px]"
+          aria-hidden="true"
+        />
+      )}
 
-      <div className="flex flex-wrap items-end gap-4">
-        {/* Switch janela/período */}
-        <div>
-          <p className="text-xs text-muted-foreground mb-2">Modo de filtro</p>
-          <div className="flex items-center gap-3 rounded-full border border-border px-3 py-1.5">
-            <span className={p.mode === 'janela' ? 'text-foreground font-medium text-sm' : 'text-muted-foreground text-sm'}>
-              Janela
-            </span>
-            <Switch
-              checked={p.mode === 'periodo'}
-              onCheckedChange={(c) => p.onModeChange(c ? 'periodo' : 'janela')}
-            />
-            <span className={p.mode === 'periodo' ? 'text-foreground font-medium text-sm' : 'text-muted-foreground text-sm'}>
-              Período
-            </span>
-          </div>
-        </div>
+      <div className="relative z-10 rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in">
+        <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-4">
+          Filtros de visualização
+        </p>
 
-        {/* Botões de janela */}
-        {p.mode === 'janela' ? (
+        <div className="flex flex-wrap items-end gap-4">
+          {/* Switch janela/período */}
           <div>
-            <p className="text-xs text-muted-foreground mb-2">Janela</p>
-            <div className="inline-flex rounded-xl border border-border bg-secondary/40 p-1">
-              {WINDOW_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => p.onWindowChange(opt.value)}
-                  className={cn(
-                    'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
-                    p.windowKey === opt.value
-                      ? 'bg-card text-foreground shadow-soft'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <p className="text-xs text-muted-foreground mb-2">Modo de filtro</p>
+            <div className="flex items-center gap-3 rounded-full border border-border px-3 py-1.5">
+              <span className={p.mode === 'janela' ? 'text-foreground font-medium text-sm' : 'text-muted-foreground text-sm'}>
+                Janela
+              </span>
+              <Switch
+                checked={p.mode === 'periodo'}
+                onCheckedChange={(c) => p.onModeChange(c ? 'periodo' : 'janela')}
+              />
+              <span className={p.mode === 'periodo' ? 'text-foreground font-medium text-sm' : 'text-muted-foreground text-sm'}>
+                Período
+              </span>
             </div>
           </div>
-        ) : (
-          <div className="flex gap-3">
-            <div>
-              <p className="text-xs text-muted-foreground mb-2">Início</p>
-              <input
-                type="date"
-                className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
-                defaultValue={periodDefaults.start}
-              />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-2">Fim</p>
-              <input
-                type="date"
-                className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
-                defaultValue={periodDefaults.end}
-              />
-            </div>
-          </div>
-        )}
 
-        <div className="flex-1" />
+          {/* Botões de janela */}
+          {p.mode === 'janela' ? (
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Janela</p>
+              <div className="inline-flex rounded-xl border border-border bg-secondary/40 p-1">
+                {WINDOW_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => p.onWindowChange(opt.value)}
+                    className={cn(
+                      'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
+                      p.windowKey === opt.value
+                        ? 'bg-card text-foreground shadow-soft'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">Início</p>
+                <input
+                  type="date"
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
+                  defaultValue={periodDefaults.start}
+                />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">Fim</p>
+                <input
+                  type="date"
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
+                  defaultValue={periodDefaults.end}
+                />
+              </div>
+            </div>
+          )}
 
-        {/* Chip de consumo acumulado — apenas no Dashboard */}
-        {p.onShiftChange && (
-          <ConsumptionSummaryChip
-            summary={p.consumptionSummary}
-            shiftStart={p.shiftStart ?? '07:00'}
-            shiftEnd={p.shiftEnd ?? '19:00'}
-            onApply={p.onShiftChange}
-          />
-        )}
+          <div className="flex-1" />
+
+          {/* Chip de consumo acumulado — apenas no Dashboard */}
+          {p.onShiftChange && (
+            <ConsumptionSummaryChip
+              summary={p.consumptionSummary}
+              shiftStart={p.shiftStart ?? '07:00'}
+              shiftEnd={p.shiftEnd ?? '19:00'}
+              onApply={p.onShiftChange}
+              onOpenChange={setConsumptionPopoverOpen}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ interface ConsumptionSummaryChipProps {
   shiftStart: string;
   shiftEnd: string;
   onApply: (start: string, end: string) => void;
+  onOpenChange?: (open: boolean) => void;
 }
 
 interface ShiftProgress {
@@ -164,6 +165,7 @@ export function ConsumptionSummaryChip({
   shiftStart,
   shiftEnd,
   onApply,
+  onOpenChange,
 }: ConsumptionSummaryChipProps) {
   const [open, setOpen] = useState(false);
   const [draftStart, setDraftStart] = useState(shiftStart);
@@ -177,11 +179,16 @@ export function ConsumptionSummaryChip({
   }, []);
 
   useEffect(() => {
+    return () => onOpenChange?.(false);
+  }, [onOpenChange]);
+
+  useEffect(() => {
     if (!open) return;
 
     function handle(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
+        onOpenChange?.(false);
         setDraftStart(shiftStart);
         setDraftEnd(shiftEnd);
       }
@@ -189,26 +196,31 @@ export function ConsumptionSummaryChip({
 
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
-  }, [open, shiftStart, shiftEnd]);
+  }, [open, shiftStart, shiftEnd, onOpenChange]);
 
   function handleApply() {
     onApply(draftStart, draftEnd);
     setOpen(false);
+    onOpenChange?.(false);
   }
 
   function handleCancel() {
     setDraftStart(shiftStart);
     setDraftEnd(shiftEnd);
     setOpen(false);
+    onOpenChange?.(false);
   }
 
   function handleToggleOpen() {
-    if (!open) {
+    const nextOpen = !open;
+
+    if (nextOpen) {
       setDraftStart(shiftStart);
       setDraftEnd(shiftEnd);
     }
 
-    setOpen((v) => !v);
+    setOpen(nextOpen);
+    onOpenChange?.(nextOpen);
   }
 
   const progress = getShiftProgress(shiftStart, shiftEnd, tick);
