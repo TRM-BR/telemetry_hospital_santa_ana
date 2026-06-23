@@ -8,7 +8,7 @@ import FiltersBar from '../components/dashboard/FiltersBar';
 import { FlowBarChart } from '../components/dashboard/FlowBarChart';
 import HistoryChart, { type ChartSeries } from '../components/dashboard/HistoryChart';
 import { LevelGaugeCard } from '../components/dashboard/LevelGaugeCard';
-import { WINDOW_TO_HOURS, CHART_COLORS } from '../constants/dashboard';
+import { WINDOW_TO_HOURS, CHART_COLORS, DEFAULT_SHIFT, SHIFT_LS_KEY } from '../constants/dashboard';
 import type {
   WindowKey,
   FilterMode,
@@ -19,12 +19,14 @@ import type {
 function groupLabel(i: number) { return `Grupo ${i + 1}`; }
 
 function buildSeries(devices: DashDevice[], metric: string, winStart: number, nowMs: number): ChartSeries[] {
-  return devices.map((d, i) => ({
-    key: `dev_${d.device_id}`,
-    label: groupLabel(i),
-    color: CHART_COLORS[i % CHART_COLORS.length],
-    data: fillSilenceWithZeros(d.series?.[metric] ?? [], winStart, nowMs),
-  }));
+  return devices
+    .filter((d) => (d.series?.[metric]?.length ?? 0) > 0)
+    .map((d, i) => ({
+      key: `dev_${d.device_id}`,
+      label: groupLabel(i),
+      color: CHART_COLORS[i % CHART_COLORS.length],
+      data: fillSilenceWithZeros(d.series?.[metric] ?? [], winStart, nowMs),
+    }));
 }
 
 function buildSeriesForDevice(device: DashDevice, metric: string, idx: number, winStart: number, nowMs: number): ChartSeries[] {
@@ -63,7 +65,13 @@ const Dashboard = () => {
 
   const [mode, setMode] = useState<FilterMode>('janela');
   const [windowKey, setWindowKey] = useState<WindowKey>('24h');
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [shift, setShift] = useState<{ start: string; end: string }>(() => {
+    try {
+      const saved = localStorage.getItem(SHIFT_LS_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch { /* ignore */ }
+    return DEFAULT_SHIFT;
+  });
 
   const [data, setData] = useState<InstallationDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,7 +87,7 @@ const Dashboard = () => {
       }
       try {
         const json = await api<InstallationDashboardResponse>(
-          `/installations/${id}/dashboard?hours=${hours}`,
+          `/installations/${id}/dashboard?hours=${hours}&shift_start=${shift.start}&shift_end=${shift.end}`,
           { signal },
         );
         setData(json);
@@ -94,7 +102,7 @@ const Dashboard = () => {
         if (!silent) setLoading(false);
       }
     },
-    [id, hours],
+    [id, hours, shift.start, shift.end],
   );
 
   useEffect(() => {
@@ -111,7 +119,7 @@ const Dashboard = () => {
       ctrl.abort();
       clearInterval(iv);
     };
-  }, [load, refreshKey]);
+  }, [load]);
 
   const devices = useMemo(() => data?.devices ?? [], [data]);
 
@@ -196,7 +204,14 @@ const Dashboard = () => {
           onModeChange={setMode}
           windowKey={windowKey}
           onWindowChange={setWindowKey}
-          onRefresh={() => setRefreshKey((k) => k + 1)}
+          consumptionSummary={data?.consumption_summary}
+          shiftStart={shift.start}
+          shiftEnd={shift.end}
+          onShiftChange={(start, end) => {
+            const next = { start, end };
+            setShift(next);
+            try { localStorage.setItem(SHIFT_LS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+          }}
         />
 
         {loading && (

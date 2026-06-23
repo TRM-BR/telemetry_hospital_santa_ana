@@ -1,15 +1,19 @@
-import { RefreshCw } from 'lucide-react';
 import { Switch } from '../ui/Switch';
-import type { WindowKey, FilterMode } from '../../types/telemetry';
+import type { WindowKey, FilterMode, ConsumptionSummary } from '../../types/telemetry';
 import { WINDOW_OPTIONS } from '../../constants/dashboard';
 import { cn } from '../../lib/cn';
+import { ConsumptionSummaryChip } from './ConsumptionSummaryChip';
 
 interface FiltersBarProps {
   mode: FilterMode;
   onModeChange: (m: FilterMode) => void;
   windowKey: WindowKey;
   onWindowChange: (w: WindowKey) => void;
-  onRefresh: () => void;
+  // Chip de consumo — opcional; só renderiza quando onShiftChange estiver presente
+  consumptionSummary?: ConsumptionSummary | null;
+  shiftStart?: string;
+  shiftEnd?: string;
+  onShiftChange?: (start: string, end: string) => void;
 }
 
 export function FiltersBar(p: FiltersBarProps) {
@@ -82,14 +86,15 @@ export function FiltersBar(p: FiltersBarProps) {
 
         <div className="flex-1" />
 
-        <button
-          type="button"
-          onClick={p.onRefresh}
-          className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors ml-auto"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Atualizar
-        </button>
+        {/* Chip de consumo acumulado — apenas no Dashboard */}
+        {p.onShiftChange && (
+          <ConsumptionSummaryChip
+            summary={p.consumptionSummary}
+            shiftStart={p.shiftStart ?? '07:00'}
+            shiftEnd={p.shiftEnd ?? '19:00'}
+            onApply={p.onShiftChange}
+          />
+        )}
       </div>
     </div>
   );

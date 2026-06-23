@@ -13,6 +13,7 @@ bloqueados pelo JWT — o token só é emitido para status=approved.
 """
 from __future__ import annotations
 
+import zoneinfo
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -181,6 +182,7 @@ class InstallationDashboardResponse(BaseModel):
     volume_total_l: float = 0.0
     faltante_total_l: float = 0.0
     capacidade_total_l: float = 0.0
+    consumption_summary: Optional[ConsumptionSummary] = None
 
 
 class DeviceTopology(BaseModel):
@@ -208,9 +210,41 @@ class TopologyResponse(BaseModel):
     devices: list[DeviceTopology]
 
 
+class ShiftWindow(BaseModel):
+    label: str
+    start: str
+    end: str
+
+
+class ConsumptionSummary(BaseModel):
+    total_m3: float
+    period_1_m3: float
+    period_2_m3: float
+    period_1: ShiftWindow
+    period_2: ShiftWindow
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _parse_hhmm(s: str, default_min: int) -> int:
+    """Parse 'HH:MM' → minutes-of-day. Returns default_min on invalid input."""
+    try:
+        parts = s.strip().split(":")
+        if len(parts) != 2:
+            return default_min
+        h, m = int(parts[0]), int(parts[1])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            return default_min
+        return h * 60 + m
+    except (ValueError, AttributeError):
+        return default_min
+
+
+def _fmt_hhmm(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
 
 def _ts_z(dt: datetime) -> str:
     if dt.tzinfo is None:
@@ -274,6 +308,8 @@ async def get_dashboard(
     db: DbDep,
     _user: CurrentUser,
     hours: int = Query(24, ge=1, le=720),
+    shift_start: str = Query("07:00"),
+    shift_end: str = Query("19:00"),
 ):
     """Snapshot real por device + série temporal nas últimas `hours` horas."""
     inst = await _find_installation(db, slug)
@@ -328,6 +364,13 @@ async def get_dashboard(
     # group_key → {"cfg": ReservoirConfig, "tank_pcts": list[float]}
     group_aggregates: dict[str, dict] = {}
 
+    # Consumo acumulado por turno (m³)
+    shift_start_min = _parse_hhmm(shift_start, 7 * 60)
+    shift_end_min = _parse_hhmm(shift_end, 19 * 60)
+    _tz = zoneinfo.ZoneInfo(_FULL_ESTIMATE_TZ)
+    cons_p1_l = 0.0
+    cons_p2_l = 0.0
+
     for i, r in enumerate(device_rows):
         last_seen: Optional[datetime] = r.last_seen_utc
         is_active = (
@@ -377,10 +420,26 @@ async def get_dashboard(
                 DashSeriesPoint(t=t, v=v)
                 for t, v in flow_from_level.consumption_series(_pts, cfg.group_capacity_l)
             ]
+            hourly_buckets = list(flow_from_level.net_flow_hourly(_pts, cfg.group_capacity_l, _FULL_ESTIMATE_TZ))
             series_out["flow_hourly_lph"] = [
-                DashSeriesPoint(t=t, v=v)
-                for t, v in flow_from_level.net_flow_hourly(_pts, cfg.group_capacity_l, _FULL_ESTIMATE_TZ)
+                DashSeriesPoint(t=t, v=v) for t, v in hourly_buckets
             ]
+            # Accumulate consumption for shift breakdown (queda retificada por turno)
+            for bucket_end_ms, delta_l in hourly_buckets:
+                consumed = max(0.0, -delta_l)
+                if consumed <= 0.0:
+                    continue
+                bucket_start_ms = bucket_end_ms - 3_600_000
+                local_dt = datetime.fromtimestamp(bucket_start_ms / 1000, tz=_tz)
+                minute_of_day = local_dt.hour * 60 + local_dt.minute
+                if shift_start_min < shift_end_min:
+                    in_p1 = shift_start_min <= minute_of_day < shift_end_min
+                else:
+                    in_p1 = minute_of_day >= shift_start_min or minute_of_day < shift_end_min
+                if in_p1:
+                    cons_p1_l += consumed
+                else:
+                    cons_p2_l += consumed
 
         # Acumulação para totais por grupo distinto
         # Antes da migration: cada device = grupo único por índice
@@ -443,6 +502,22 @@ async def get_dashboard(
         faltante_total_l += cfg_g.group_capacity_l - g_vol
         capacidade_total_l += cfg_g.group_capacity_l
 
+    consumption_summary = ConsumptionSummary(
+        total_m3=round((cons_p1_l + cons_p2_l) / 1000, 2),
+        period_1_m3=round(cons_p1_l / 1000, 2),
+        period_2_m3=round(cons_p2_l / 1000, 2),
+        period_1=ShiftWindow(
+            label=f"{shift_start}–{shift_end}",
+            start=shift_start,
+            end=shift_end,
+        ),
+        period_2=ShiftWindow(
+            label=f"{shift_end}–{shift_start}",
+            start=shift_end,
+            end=shift_start,
+        ),
+    )
+
     return InstallationDashboardResponse(
         installation_slug=inst.slug,
         installation_name=inst.name,
@@ -454,6 +529,7 @@ async def get_dashboard(
         volume_total_l=round(volume_total_l, 1),
         faltante_total_l=round(faltante_total_l, 1),
         capacidade_total_l=round(capacidade_total_l, 1),
+        consumption_summary=consumption_summary,
     )
 
 

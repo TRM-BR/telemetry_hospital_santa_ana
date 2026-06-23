@@ -77,7 +77,6 @@ function EmptyState({ title, message }: { title: string; message: string }) {
 const Remotas = () => {
   const [mode, setMode] = useState<FilterMode>('janela');
   const [windowKey, setWindowKey] = useState<WindowKey>('24h');
-  const [refreshKey, setRefreshKey] = useState(0);
 
   const [data, setData] = useState<InstallationDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,7 +124,7 @@ const Remotas = () => {
       ctrl.abort();
       clearInterval(iv);
     };
-  }, [load, refreshKey]);
+  }, [load]);
 
   const devices = useMemo(() => data?.devices ?? [], [data]);
 
@@ -177,7 +176,6 @@ const Remotas = () => {
           onModeChange={setMode}
           windowKey={windowKey}
           onWindowChange={setWindowKey}
-          onRefresh={() => setRefreshKey((k) => k + 1)}
         />
 
         {error && (
