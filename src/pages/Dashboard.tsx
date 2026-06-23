@@ -254,7 +254,7 @@ const Dashboard = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
             {levelPctSeries.length > 0 && (
               <HistoryChart
-                title="Histórico de Nível (%)"
+                title="Histórico de Nível Geral (%)"
                 unit="%"
                 windowKey={windowKey}
                 yDomain={[0, 100]}
@@ -266,7 +266,7 @@ const Dashboard = () => {
             )}
             {levelMSeries.length > 0 && (
               <HistoryChart
-                title="Histórico de Nível (m)"
+                title="Histórico de Nível Geral (m)"
                 unit="m"
                 windowKey={windowKey}
                 yDomain={[0, 'auto']}
