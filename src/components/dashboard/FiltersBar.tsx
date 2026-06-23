@@ -55,44 +55,46 @@ export function FiltersBar(p: FiltersBarProps) {
             </span>
           </div>
 
-          {/* Botões de janela */}
-          {p.mode === 'janela' ? (
-            <div className="inline-flex rounded-xl border border-border bg-secondary/40 p-1">
-              {WINDOW_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => p.onWindowChange(opt.value)}
-                  className={cn(
-                    'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
-                    p.windowKey === opt.value
-                      ? 'bg-card text-foreground shadow-soft'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                type="date"
-                className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
-                value={p.periodStart ?? todaySP}
-                max={todaySP}
-                onChange={(e) => p.onPeriodChange?.(e.target.value, p.periodEnd ?? todaySP)}
-              />
-              <input
-                type="date"
-                className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
-                value={p.periodEnd ?? todaySP}
-                min={p.periodStart ?? todaySP}
-                max={todaySP}
-                onChange={(e) => p.onPeriodChange?.(p.periodStart ?? todaySP, e.target.value)}
-              />
-            </div>
-          )}
+          {/* Botões de janela / inputs de data */}
+          <div key={p.mode} className="animate-swap-in">
+            {p.mode === 'janela' ? (
+              <div className="inline-flex rounded-xl border border-border bg-secondary/40 p-1">
+                {WINDOW_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => p.onWindowChange(opt.value)}
+                    className={cn(
+                      'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
+                      p.windowKey === opt.value
+                        ? 'bg-card text-foreground shadow-soft'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary transition-colors"
+                  value={p.periodStart ?? todaySP}
+                  max={todaySP}
+                  onChange={(e) => p.onPeriodChange?.(e.target.value, p.periodEnd ?? todaySP)}
+                />
+                <input
+                  type="date"
+                  className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary transition-colors"
+                  value={p.periodEnd ?? todaySP}
+                  min={p.periodStart ?? todaySP}
+                  max={todaySP}
+                  onChange={(e) => p.onPeriodChange?.(p.periodStart ?? todaySP, e.target.value)}
+                />
+              </div>
+            )}
+          </div>
 
           <div className="flex-1" />
 

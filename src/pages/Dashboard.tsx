@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Droplets } from 'lucide-react';
+import { cn } from '../lib/cn';
 import { api } from '../services/api';
 import { isSignalLost, fillSilenceWithZeros } from '../lib/series';
 import { todaySaoPaulo } from '../lib/shifts';
@@ -226,12 +227,20 @@ const Dashboard = () => {
           onPeriodChange={(s, e) => setPeriod({ start: s, end: e })}
         />
 
-        {loading && (
-          <p className="text-[11px] text-muted-foreground animate-pulse px-1">Carregando…</p>
-        )}
+        <div
+          role="status"
+          aria-label="Carregando"
+          aria-hidden={!loading}
+          className={cn(
+            'fixed inset-0 z-40 flex items-center justify-center bg-white/40 backdrop-blur-[1px] transition-opacity duration-300 ease-out',
+            loading ? 'opacity-100' : 'opacity-0 pointer-events-none',
+          )}
+        >
+          <div className="h-10 w-10 rounded-full border-[3px] border-primary border-t-transparent animate-spin motion-reduce:animate-none" />
+        </div>
 
         {error && (
-          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-5 text-sm text-destructive">
+          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-5 text-sm text-destructive animate-drop-in">
             {error}
           </div>
         )}
