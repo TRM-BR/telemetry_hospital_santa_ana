@@ -37,6 +37,7 @@ export const SHIFT_PRESETS: { label: string; start: string; end: string }[] = [
   { label: '07h–19h', start: '07:00', end: '19:00' },
   { label: '06h–18h', start: '06:00', end: '18:00' },
   { label: '08h–20h', start: '08:00', end: '20:00' },
+  { label: 'Dia inteiro', start: '00:00', end: '00:00' },
 ];
 
 // Paleta do dashboard do hospital, estilo Clima:

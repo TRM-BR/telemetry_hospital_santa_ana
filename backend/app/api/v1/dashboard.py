@@ -83,6 +83,16 @@ _SQL_SERIES = text("""
     ORDER BY dm.device_id, dm.metric_name, dm.derived_at_utc ASC
 """)
 
+_SQL_SEED = text("""
+    SELECT DISTINCT ON (dm.device_id)
+        dm.device_id, dm.value, dm.derived_at_utc
+    FROM derived_metrics dm
+    WHERE dm.device_id = ANY(:device_ids)
+      AND dm.metric_name = 'level_m'
+      AND dm.derived_at_utc < :from_dt
+    ORDER BY dm.device_id, dm.derived_at_utc DESC
+""")
+
 _SQL_TOPOLOGY = text("""
     SELECT
         d.id        AS device_id,
@@ -216,12 +226,17 @@ class ShiftWindow(BaseModel):
     end: str
 
 
+class GroupConsumption(BaseModel):
+    index: int
+    label: str
+    m3: float
+    share: float  # fraction 0..1 of total
+
+
 class ConsumptionSummary(BaseModel):
     total_m3: float
-    period_1_m3: float
-    period_2_m3: float
-    period_1: ShiftWindow
-    period_2: ShiftWindow
+    window: ShiftWindow
+    groups: list[GroupConsumption]
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +382,17 @@ async def get_dashboard(
             DashSeriesPoint(t=_epoch_ms(ts), v=float(value))
         )
 
+    # Leitura-semente: última level_m antes de from_dt por device (ancora 1º balde horário)
+    seed_rows = (await db.execute(
+        _SQL_SEED, {"device_ids": device_ids, "from_dt": from_dt}
+    )).fetchall()
+    seed_level_m_by_device: dict[int, tuple[int, float]] = {
+        device_id: (_epoch_ms(ts), float(value))
+        for device_id, value, ts in seed_rows
+        if value is not None
+    }
+    from_dt_ms = int(from_dt.timestamp() * 1000)
+
     # Config de reservatório por grupo (resiliente — fallback se tabela não existir)
     groups = await reservoir_config.load_groups(db, inst.id)
 
@@ -379,12 +405,12 @@ async def get_dashboard(
     # group_key → {"cfg": ReservoirConfig, "tank_pcts": list[float]}
     group_aggregates: dict[str, dict] = {}
 
-    # Consumo acumulado por turno (m³)
-    shift_start_min = _parse_hhmm(shift_start, 7 * 60)
-    shift_end_min = _parse_hhmm(shift_end, 19 * 60)
+    # Consumo acumulado por grupo dentro da janela de horário
+    win_start_min = _parse_hhmm(shift_start, 7 * 60)
+    win_end_min = _parse_hhmm(shift_end, 19 * 60)
     _tz = zoneinfo.ZoneInfo(_FULL_ESTIMATE_TZ)
-    cons_p1_l = 0.0
-    cons_p2_l = 0.0
+    cons_by_group: dict[int, float] = {}
+    group_labels: dict[int, str] = {}
 
     for i, r in enumerate(device_rows):
         last_seen: Optional[datetime] = r.last_seen_utc
@@ -428,6 +454,15 @@ async def get_dashboard(
         series_out = {m: dev_series.get(m, []) for m in _SERIES_METRICS}
         series_out["level_pct"] = level_pct_series
 
+        # group_name do grupo resolvido (se disponível)
+        resolved_group_name: Optional[str] = None
+        if i < len(groups):
+            resolved_group_name = groups[i].get("group_name")
+
+        # Inicializar acumulador deste grupo
+        cons_by_group.setdefault(i, 0.0)
+        group_labels[i] = resolved_group_name or f"Grupo {i + 1}"
+
         # Vazão derivada de nível nominal — L/h reais do grupo
         if level_pct_series:
             _pts = [(p.t, p.v) for p in level_pct_series]
@@ -435,11 +470,19 @@ async def get_dashboard(
                 DashSeriesPoint(t=t, v=v)
                 for t, v in flow_from_level.consumption_series(_pts, cfg.group_capacity_l)
             ]
-            hourly_buckets = list(flow_from_level.net_flow_hourly(_pts, cfg.group_capacity_l, _FULL_ESTIMATE_TZ))
+            # Semente: prepend da última leitura antes de from_dt para ancorar 1º balde
+            seed_pt = None
+            if level_m_series:
+                seed_lm = seed_level_m_by_device.get(r.device_id)
+                if seed_lm is not None:
+                    seed_pt = (seed_lm[0], res_calc.tank_percent(seed_lm[1], cfg))
+            _pts_seeded = ([seed_pt] + _pts) if seed_pt is not None else _pts
+            hourly_all = flow_from_level.net_flow_hourly(_pts_seeded, cfg.group_capacity_l, _FULL_ESTIMATE_TZ)
+            hourly_buckets = [(t, v) for t, v in hourly_all if t > from_dt_ms]
             series_out["flow_hourly_lph"] = [
                 DashSeriesPoint(t=t, v=v) for t, v in hourly_buckets
             ]
-            # Accumulate consumption for shift breakdown (queda retificada por turno)
+            # Acumular consumo do grupo dentro da janela de horário
             for bucket_end_ms, delta_l in hourly_buckets:
                 consumed = max(0.0, -delta_l)
                 if consumed <= 0.0:
@@ -447,14 +490,14 @@ async def get_dashboard(
                 bucket_start_ms = bucket_end_ms - 3_600_000
                 local_dt = datetime.fromtimestamp(bucket_start_ms / 1000, tz=_tz)
                 minute_of_day = local_dt.hour * 60 + local_dt.minute
-                if shift_start_min < shift_end_min:
-                    in_p1 = shift_start_min <= minute_of_day < shift_end_min
+                if win_start_min == win_end_min:
+                    in_window = True
+                elif win_start_min < win_end_min:
+                    in_window = win_start_min <= minute_of_day < win_end_min
                 else:
-                    in_p1 = minute_of_day >= shift_start_min or minute_of_day < shift_end_min
-                if in_p1:
-                    cons_p1_l += consumed
-                else:
-                    cons_p2_l += consumed
+                    in_window = minute_of_day >= win_start_min or minute_of_day < win_end_min
+                if in_window:
+                    cons_by_group[i] += consumed
 
         # Acumulação para totais por grupo distinto
         # Antes da migration: cada device = grupo único por índice
@@ -463,11 +506,6 @@ async def get_dashboard(
             group_aggregates[group_key] = {"cfg": cfg, "tank_pcts": []}
         if ro is not None:
             group_aggregates[group_key]["tank_pcts"].append(ro["percentual"])
-
-        # group_name do grupo resolvido (se disponível)
-        resolved_group_name: Optional[str] = None
-        if i < len(groups):
-            resolved_group_name = groups[i].get("group_name")
 
         devices.append(DashDevice(
             device_id=r.device_id,
@@ -517,20 +555,24 @@ async def get_dashboard(
         faltante_total_l += cfg_g.group_capacity_l - g_vol
         capacidade_total_l += cfg_g.group_capacity_l
 
+    total_l = sum(cons_by_group.values())
+    groups_out = [
+        GroupConsumption(
+            index=i,
+            label=group_labels.get(i, f"Grupo {i + 1}"),
+            m3=round(cons_by_group.get(i, 0.0) / 1000, 2),
+            share=round(cons_by_group.get(i, 0.0) / total_l, 4) if total_l > 0 else 0.0,
+        )
+        for i in range(len(device_rows))
+    ]
     consumption_summary = ConsumptionSummary(
-        total_m3=round((cons_p1_l + cons_p2_l) / 1000, 2),
-        period_1_m3=round(cons_p1_l / 1000, 2),
-        period_2_m3=round(cons_p2_l / 1000, 2),
-        period_1=ShiftWindow(
-            label=f"{shift_start}–{shift_end}",
+        total_m3=round(total_l / 1000, 2),
+        window=ShiftWindow(
+            label="Dia inteiro" if shift_start == shift_end else f"{shift_start}–{shift_end}",
             start=shift_start,
             end=shift_end,
         ),
-        period_2=ShiftWindow(
-            label=f"{shift_end}–{shift_start}",
-            start=shift_end,
-            end=shift_start,
-        ),
+        groups=groups_out,
     )
 
     return InstallationDashboardResponse(

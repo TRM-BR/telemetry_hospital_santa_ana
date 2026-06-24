@@ -316,9 +316,10 @@ export function HistoryChart({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const validEntries: any[] = payload.filter((e: any) => e.value != null);
     if (validEntries.length === 0) return null;
-    const accentColor = validEntries.length === 1
-      ? (validEntries[0]?.stroke ?? 'hsl(var(--primary))')
-      : 'hsl(var(--border))';
+    const isMulti = series.length > 1;
+    const accentColor = isMulti
+      ? 'hsl(var(--border))'
+      : (validEntries[0]?.stroke ?? 'hsl(var(--primary))');
     return (
       <div style={{
         background: 'hsl(var(--card))',
@@ -337,7 +338,7 @@ export function HistoryChart({
         {validEntries.map((entry: any) => (
           <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: entry.stroke, flexShrink: 0 }} />
-            {validEntries.length > 1 && (
+            {isMulti && (
               <span style={{ color: 'hsl(var(--muted-foreground))', flex: 1 }}>{entry.name}</span>
             )}
             <span style={{ fontWeight: 700, color: 'hsl(var(--foreground))', fontVariantNumeric: 'tabular-nums' }}>

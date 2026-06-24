@@ -11,6 +11,7 @@ import { FlowBarChart } from '../components/dashboard/FlowBarChart';
 import HistoryChart, { type ChartSeries } from '../components/dashboard/HistoryChart';
 import { LevelGaugeCard } from '../components/dashboard/LevelGaugeCard';
 import { WINDOW_TO_HOURS, CHART_COLORS, DEFAULT_SHIFT, SHIFT_LS_KEY } from '../constants/dashboard';
+import { TOP_BAR_HEIGHT_PX } from '../constants/layout';
 import type {
   WindowKey,
   FilterMode,
@@ -171,7 +172,10 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen w-full bg-secondary">
       <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 sm:px-8">
+        <div
+          className="mx-auto flex max-w-7xl items-center justify-between px-5 sm:px-8"
+          style={{ minHeight: TOP_BAR_HEIGHT_PX }}
+        >
           <button
             type="button"
             onClick={() => navigate(`/instalacao/${id}`)}
@@ -183,8 +187,8 @@ const Dashboard = () => {
 
           <div className="flex items-center gap-3 text-primary">
             <img
-              src="/santana-coat.png"
-              alt="Brasão"
+              src="/brasao_santana_de_parnaiba.webp"
+              alt="Brasão de Santana de Parnaíba"
               className="h-10 w-10 object-contain"
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
             />
@@ -192,7 +196,7 @@ const Dashboard = () => {
               <p className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
                 Santana do Parnaíba
               </p>
-              <p className="text-[12px] font-semibold text-foreground">
+              <p className="mt-0.5 text-base font-bold text-foreground">
                 Dashboard · {installationName}
               </p>
             </div>
@@ -283,7 +287,7 @@ const Dashboard = () => {
             )}
             {levelMSeries.length > 0 && (
               <HistoryChart
-                title="Histórico de Nível Geral (m)"
+                title="Histórico de Nível Geral   (m)"
                 unit="m"
                 windowKey={windowKey}
                 yDomain={[0, 'auto']}
