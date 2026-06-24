@@ -79,9 +79,13 @@ export function ConsumptionSummaryChip({
     onOpenChange?.(next);
   }
 
+  const toMin = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+  const isWrap = shiftStart !== shiftEnd && toMin(shiftStart) > toMin(shiftEnd);
   const windowLabel = shiftStart === shiftEnd
     ? 'Dia inteiro'
-    : `${shiftStart} → ${shiftEnd}`;
+    : isWrap
+      ? `${shiftStart} (hoje) → ${shiftEnd} (amanhã)`
+      : `${shiftStart} → ${shiftEnd}`;
 
   const groups = summary?.groups ?? [];
 
