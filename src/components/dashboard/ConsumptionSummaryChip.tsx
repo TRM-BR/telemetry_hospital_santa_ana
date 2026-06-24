@@ -17,39 +17,15 @@ function formatM3(value?: number) {
   return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} m³`;
 }
 
-function clamp01(v: number) {
-  return Math.min(1, Math.max(0, v));
-}
-
 function GroupStat({ group }: { group: GroupConsumption }) {
-  const fillPercent = Math.round(clamp01(group.share) * 100);
-
   return (
     <div className="min-w-0 text-left">
-      <div className="mb-1 flex min-h-4 items-center gap-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
-          {group.label}
-        </span>
-      </div>
-
+      <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
+        {group.label}
+      </span>
       <p className="mt-0.5 font-bold tabular-nums text-foreground text-[15px] leading-snug">
         {formatM3(group.m3)}
       </p>
-
-      <div
-        className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-secondary"
-        role="progressbar"
-        aria-label={`${group.label}: fatia do consumo total`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={fillPercent}
-        title="Fatia do consumo total"
-      >
-        <div
-          className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out"
-          style={{ width: `${fillPercent}%` }}
-        />
-      </div>
     </div>
   );
 }
@@ -116,10 +92,7 @@ export function ConsumptionSummaryChip({
         onClick={handleToggleOpen}
         aria-expanded={open}
         className={cn(
-          'grid w-full items-center gap-3 rounded-xl border bg-card px-3.5 py-2 text-sm transition-colors sm:w-[36rem]',
-          groups.length > 0
-            ? 'grid-cols-[1fr_1px_1fr_auto]'
-            : 'grid-cols-[1fr_auto]',
+          'flex w-full items-center gap-3 rounded-xl border bg-card px-3.5 py-2 text-sm transition-colors sm:w-[28rem]',
           open
             ? 'border-primary/40 text-primary'
             : 'border-border text-foreground hover:border-primary/40 hover:text-primary',
@@ -127,12 +100,19 @@ export function ConsumptionSummaryChip({
       >
         {groups.length > 0 ? (
           <>
-            {groups.flatMap((g, idx) => [
-              ...(idx > 0
-                ? [<span key={`sep-${idx}`} className="h-full min-h-12 w-px bg-border" aria-hidden="true" />]
-                : []),
-              <GroupStat key={g.index} group={g} />,
-            ])}
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <div className="flex items-stretch gap-3">
+                {groups.flatMap((g, idx) => [
+                  ...(idx > 0
+                    ? [<span key={`sep-${idx}`} className="w-px self-stretch bg-border" aria-hidden="true" />]
+                    : []),
+                  <div key={g.index} className="min-w-0 flex-1">
+                    <GroupStat group={g} />
+                  </div>,
+                ])}
+              </div>
+              <p className="text-center text-[10px] text-muted-foreground">{windowLabel}</p>
+            </div>
 
             <Settings
               className={cn(
@@ -144,9 +124,7 @@ export function ConsumptionSummaryChip({
           </>
         ) : (
           <>
-            <span className="text-sm text-muted-foreground">
-              {windowLabel}
-            </span>
+            <span className="flex-1 text-sm text-muted-foreground">{windowLabel}</span>
             <Settings
               className={cn(
                 'h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform duration-300',
@@ -157,12 +135,6 @@ export function ConsumptionSummaryChip({
           </>
         )}
       </button>
-
-      {groups.length > 0 && (
-        <p className="mt-1 text-center text-[10px] text-muted-foreground">
-          {windowLabel}
-        </p>
-      )}
 
       {open && (
         <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-border bg-card p-4 shadow-soft animate-drop-in">

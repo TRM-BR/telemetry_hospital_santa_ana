@@ -101,9 +101,14 @@ export function FiltersBar(p: FiltersBarProps) {
           {/* Bloco de consumo por grupo — apenas no Dashboard */}
           {p.onShiftChange && (
             <>
-              <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground whitespace-nowrap">
-                Consumo
-              </span>
+              <div className="flex flex-col items-start leading-tight">
+                <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground whitespace-nowrap">
+                  Consumo
+                </span>
+                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                  ({p.shiftStart === p.shiftEnd ? 'Dia inteiro' : `${p.shiftStart} → ${p.shiftEnd}`})
+                </span>
+              </div>
               <div className="h-4 w-px bg-border" aria-hidden="true" />
               <ConsumptionSummaryChip
                 summary={p.consumptionSummary}
