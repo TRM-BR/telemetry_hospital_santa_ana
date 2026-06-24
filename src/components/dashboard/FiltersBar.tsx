@@ -105,9 +105,6 @@ export function FiltersBar(p: FiltersBarProps) {
                 <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground whitespace-nowrap">
                   Consumo
                 </span>
-                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                  ({p.shiftStart === p.shiftEnd ? 'Dia inteiro' : `${p.shiftStart} → ${p.shiftEnd}`})
-                </span>
               </div>
               <div className="h-4 w-px bg-border" aria-hidden="true" />
               <ConsumptionSummaryChip
