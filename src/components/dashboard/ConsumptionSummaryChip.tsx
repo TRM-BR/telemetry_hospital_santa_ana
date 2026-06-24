@@ -20,10 +20,10 @@ function formatM3(value?: number) {
 function GroupStat({ group }: { group: GroupConsumption }) {
   return (
     <div className="min-w-0 text-left">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.16em] leading-none text-primary">
         {group.label}
       </span>
-      <p className="mt-0.5 font-bold tabular-nums text-foreground text-[15px] leading-snug">
+      <p className="mt-0.5 font-bold tabular-nums text-foreground text-[15px] leading-tight">
         {formatM3(group.m3)}
       </p>
     </div>
@@ -92,7 +92,7 @@ export function ConsumptionSummaryChip({
         onClick={handleToggleOpen}
         aria-expanded={open}
         className={cn(
-          'flex w-full items-center gap-3 rounded-xl border bg-card px-3.5 py-2 text-sm transition-colors sm:w-[28rem]',
+          'flex w-full items-center gap-3 rounded-xl border bg-card px-3.5 py-1.5 text-sm transition-colors sm:w-[28rem]',
           open
             ? 'border-primary/40 text-primary'
             : 'border-border text-foreground hover:border-primary/40 hover:text-primary',
@@ -100,7 +100,7 @@ export function ConsumptionSummaryChip({
       >
         {groups.length > 0 ? (
           <>
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <div className="flex items-stretch gap-3">
                 {groups.flatMap((g, idx) => [
                   ...(idx > 0
@@ -111,7 +111,7 @@ export function ConsumptionSummaryChip({
                   </div>,
                 ])}
               </div>
-              <p className="text-center text-[10px] text-muted-foreground">{windowLabel}</p>
+              <p className="text-center text-[10px] leading-none text-muted-foreground">{windowLabel}</p>
             </div>
 
             <Settings

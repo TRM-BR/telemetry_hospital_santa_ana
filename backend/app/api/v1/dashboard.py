@@ -83,6 +83,16 @@ _SQL_SERIES = text("""
     ORDER BY dm.device_id, dm.metric_name, dm.derived_at_utc ASC
 """)
 
+_SQL_SEED = text("""
+    SELECT DISTINCT ON (dm.device_id)
+        dm.device_id, dm.value, dm.derived_at_utc
+    FROM derived_metrics dm
+    WHERE dm.device_id = ANY(:device_ids)
+      AND dm.metric_name = 'level_m'
+      AND dm.derived_at_utc < :from_dt
+    ORDER BY dm.device_id, dm.derived_at_utc DESC
+""")
+
 _SQL_TOPOLOGY = text("""
     SELECT
         d.id        AS device_id,
@@ -372,6 +382,17 @@ async def get_dashboard(
             DashSeriesPoint(t=_epoch_ms(ts), v=float(value))
         )
 
+    # Leitura-semente: última level_m antes de from_dt por device (ancora 1º balde horário)
+    seed_rows = (await db.execute(
+        _SQL_SEED, {"device_ids": device_ids, "from_dt": from_dt}
+    )).fetchall()
+    seed_level_m_by_device: dict[int, tuple[int, float]] = {
+        device_id: (_epoch_ms(ts), float(value))
+        for device_id, value, ts in seed_rows
+        if value is not None
+    }
+    from_dt_ms = int(from_dt.timestamp() * 1000)
+
     # Config de reservatório por grupo (resiliente — fallback se tabela não existir)
     groups = await reservoir_config.load_groups(db, inst.id)
 
@@ -449,7 +470,15 @@ async def get_dashboard(
                 DashSeriesPoint(t=t, v=v)
                 for t, v in flow_from_level.consumption_series(_pts, cfg.group_capacity_l)
             ]
-            hourly_buckets = list(flow_from_level.net_flow_hourly(_pts, cfg.group_capacity_l, _FULL_ESTIMATE_TZ))
+            # Semente: prepend da última leitura antes de from_dt para ancorar 1º balde
+            seed_pt = None
+            if level_m_series:
+                seed_lm = seed_level_m_by_device.get(r.device_id)
+                if seed_lm is not None:
+                    seed_pt = (seed_lm[0], res_calc.tank_percent(seed_lm[1], cfg))
+            _pts_seeded = ([seed_pt] + _pts) if seed_pt is not None else _pts
+            hourly_all = flow_from_level.net_flow_hourly(_pts_seeded, cfg.group_capacity_l, _FULL_ESTIMATE_TZ)
+            hourly_buckets = [(t, v) for t, v in hourly_all if t > from_dt_ms]
             series_out["flow_hourly_lph"] = [
                 DashSeriesPoint(t=t, v=v) for t, v in hourly_buckets
             ]
