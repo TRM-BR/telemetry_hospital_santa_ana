@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/cn';
 import { logout } from '../services/auth';
 import { useAuth } from '../hooks/useAuth';
+import { TOP_BAR_HEIGHT_PX } from '../constants/layout';
 
 const SIDEBAR_COLLAPSED = 80;
 const SIDEBAR_EXPANDED = 256;
@@ -86,7 +87,10 @@ export function AppSidebar() {
       onMouseLeave={() => !pinned && setExpanded(false)}
     >
       {/* Header */}
-      <div className="p-4 border-b border-border flex flex-col items-center gap-2">
+      <div
+        className="p-4 border-b border-border flex flex-col items-center gap-2"
+        style={{ minHeight: TOP_BAR_HEIGHT_PX }}
+      >
         <div className="flex items-center justify-center w-full">
           <img
             src="/santana-coat.png"
