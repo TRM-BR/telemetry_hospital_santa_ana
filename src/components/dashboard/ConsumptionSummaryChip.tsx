@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Settings } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { SHIFT_PRESETS } from '../../constants/dashboard';
-import type { ConsumptionSummary } from '../../types/telemetry';
-import { getShiftDisplayState } from '../../lib/shifts';
+import type { ConsumptionSummary, GroupConsumption } from '../../types/telemetry';
 
 interface ConsumptionSummaryChipProps {
   summary?: ConsumptionSummary | null;
@@ -11,18 +10,7 @@ interface ConsumptionSummaryChipProps {
   shiftEnd: string;
   onApply: (start: string, end: string) => void;
   onOpenChange?: (open: boolean) => void;
-  live?: boolean;
 }
-
-interface ShiftStatProps {
-  tag: string;
-  rangeText: string;
-  value?: number;
-  fill: number;
-  active: boolean;
-}
-
-const TIME_PROGRESS_TITLE = 'Progresso do turno (tempo), não consumo';
 
 function formatM3(value?: number) {
   if (value == null || !Number.isFinite(value)) return '—';
@@ -33,46 +21,32 @@ function clamp01(v: number) {
   return Math.min(1, Math.max(0, v));
 }
 
-function ShiftStat({ tag, rangeText, value, fill, active }: ShiftStatProps) {
-  const fillPercent = Math.round(clamp01(fill) * 100);
+function GroupStat({ group }: { group: GroupConsumption }) {
+  const fillPercent = Math.round(clamp01(group.share) * 100);
 
   return (
     <div className="min-w-0 text-left">
       <div className="mb-1 flex min-h-4 items-center gap-1.5">
-        <span className={cn(
-          'text-[10px] font-semibold uppercase tracking-[0.16em]',
-          active ? 'text-primary' : 'text-muted-foreground',
-        )}>
-          {tag}
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
+          {group.label}
         </span>
-        {active && (
-          <span className="rounded-full border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-primary">
-            em curso
-          </span>
-        )}
       </div>
 
-      <p className="truncate text-[10px] leading-none text-muted-foreground" title={rangeText}>
-        {rangeText}
-      </p>
       <p className="mt-0.5 font-bold tabular-nums text-foreground text-[15px] leading-snug">
-        {formatM3(value)}
+        {formatM3(group.m3)}
       </p>
 
       <div
         className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-secondary"
-        title={TIME_PROGRESS_TITLE}
         role="progressbar"
-        aria-label={`${tag}: ${TIME_PROGRESS_TITLE}`}
+        aria-label={`${group.label}: fatia do consumo total`}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={fillPercent}
+        title="Fatia do consumo total"
       >
         <div
-          className={cn(
-            'h-full rounded-full transition-[width] duration-700 ease-out',
-            active ? 'bg-primary' : 'bg-muted-foreground/35',
-          )}
+          className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out"
           style={{ width: `${fillPercent}%` }}
         />
       </div>
@@ -86,18 +60,11 @@ export function ConsumptionSummaryChip({
   shiftEnd,
   onApply,
   onOpenChange,
-  live = true,
 }: ConsumptionSummaryChipProps) {
   const [open, setOpen] = useState(false);
   const [draftStart, setDraftStart] = useState(shiftStart);
   const [draftEnd, setDraftEnd] = useState(shiftEnd);
-  const [tick, setTick] = useState(() => Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setTick(Date.now()), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -136,10 +103,11 @@ export function ConsumptionSummaryChip({
     onOpenChange?.(next);
   }
 
-  const state = getShiftDisplayState({ now: tick, shiftStart, shiftEnd, live });
+  const windowLabel = shiftStart === shiftEnd
+    ? 'Dia inteiro'
+    : `${shiftStart} → ${shiftEnd}`;
 
-  const p2Start = draftEnd;
-  const p2End = draftStart;
+  const groups = summary?.groups ?? [];
 
   return (
     <div ref={containerRef} className="relative w-full sm:w-auto">
@@ -148,83 +116,85 @@ export function ConsumptionSummaryChip({
         onClick={handleToggleOpen}
         aria-expanded={open}
         className={cn(
-          'grid w-full grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-card px-3.5 py-2 text-sm transition-colors sm:w-[32rem]',
+          'grid w-full items-center gap-3 rounded-xl border bg-card px-3.5 py-2 text-sm transition-colors sm:w-auto',
+          groups.length > 0
+            ? 'grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)_auto]'
+            : 'grid-cols-[1fr_auto]',
           open
             ? 'border-primary/40 text-primary'
             : 'border-border text-foreground hover:border-primary/40 hover:text-primary',
         )}
       >
-        <ShiftStat
-          tag={state.period1.label}
-          rangeText={state.period1.rangeText}
-          value={summary?.period_1_m3}
-          fill={state.period1.fill}
-          active={state.period1.isCurrent}
-        />
+        {groups.length > 0 ? (
+          <>
+            {groups.flatMap((g, idx) => [
+              ...(idx > 0
+                ? [<span key={`sep-${idx}`} className="h-full min-h-12 w-px bg-border" aria-hidden="true" />]
+                : []),
+              <GroupStat key={g.index} group={g} />,
+            ])}
 
-        <span className="h-full min-h-12 w-px bg-border" aria-hidden="true" />
-
-        <ShiftStat
-          tag={state.period2.label}
-          rangeText={state.period2.rangeText}
-          value={summary?.period_2_m3}
-          fill={state.period2.fill}
-          active={state.period2.isCurrent}
-        />
-
-        <Settings
-          className={cn(
-            'h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform duration-300',
-            open && 'rotate-90 text-primary',
-          )}
-          aria-hidden="true"
-        />
+            <Settings
+              className={cn(
+                'h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform duration-300',
+                open && 'rotate-90 text-primary',
+              )}
+              aria-hidden="true"
+            />
+          </>
+        ) : (
+          <>
+            <span className="text-sm text-muted-foreground">
+              {windowLabel}
+            </span>
+            <Settings
+              className={cn(
+                'h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform duration-300',
+                open && 'rotate-90 text-primary',
+              )}
+              aria-hidden="true"
+            />
+          </>
+        )}
       </button>
+
+      {groups.length > 0 && (
+        <p className="mt-1 text-center text-[10px] text-muted-foreground">
+          {windowLabel}
+        </p>
+      )}
 
       {open && (
         <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-border bg-card p-4 shadow-soft animate-drop-in">
           <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-1">
-            Turnos
+            Consumo
           </p>
           <h4 className="text-sm font-semibold text-foreground mb-1">
-            Configurar períodos de consumo
+            Janela de horário analisada
           </h4>
           <p className="text-[11px] text-muted-foreground mb-4">
-            Turnos que atravessam a meia-noite continuam em curso até o horário final configurado.
+            Apenas o consumo dentro desta faixa de horário é somado — igual para os dois grupos.
           </p>
 
-          <div className="space-y-3 mb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <p className="text-[11px] text-muted-foreground mb-1">Início do 1º período</p>
-                <input
-                  type="time"
-                  value={draftStart}
-                  onChange={(e) => setDraftStart(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
-                />
-              </div>
-              <div className="flex-1">
-                <p className="text-[11px] text-muted-foreground mb-1">Fim do 1º período</p>
-                <input
-                  type="time"
-                  value={draftEnd}
-                  onChange={(e) => setDraftEnd(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
-                />
-              </div>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex-1">
+              <p className="text-[11px] text-muted-foreground mb-1">Início</p>
+              <input
+                type="time"
+                value={draftStart}
+                onChange={(e) => setDraftStart(e.target.value)}
+                className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+              />
             </div>
-          </div>
-
-          <div className="rounded-xl bg-secondary/60 border border-border px-3 py-2 mb-4 space-y-1">
-            <p className="text-[11px] text-muted-foreground">
-              <span className="text-foreground font-medium">1º período:</span>{' '}
-              {draftStart} às {draftEnd}
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              <span className="text-foreground font-medium">2º período:</span>{' '}
-              {p2Start} às {p2End}
-            </p>
+            <div className="flex-1">
+              <p className="text-[11px] text-muted-foreground mb-1">Fim</p>
+              <input
+                type="time"
+                value={draftEnd}
+                onChange={(e) => setDraftEnd(e.target.value)}
+                className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+              />
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-1.5 mb-4">

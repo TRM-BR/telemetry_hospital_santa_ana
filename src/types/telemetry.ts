@@ -122,12 +122,17 @@ export interface ShiftWindow {
   end: string;    // "HH:MM"
 }
 
+export interface GroupConsumption {
+  index: number;
+  label: string;
+  m3: number;
+  share: number;
+}
+
 export interface ConsumptionSummary {
   total_m3: number;
-  period_1_m3: number;
-  period_2_m3: number;
-  period_1: ShiftWindow;
-  period_2: ShiftWindow;
+  window: ShiftWindow;
+  groups: GroupConsumption[];
 }
 
 export interface InstallationDashboardResponse {

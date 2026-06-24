@@ -6,6 +6,7 @@ import { cn } from '../../lib/cn';
 import { ConsumptionSummaryChip } from './ConsumptionSummaryChip';
 import { todaySaoPaulo } from '../../lib/shifts';
 
+
 interface FiltersBarProps {
   mode: FilterMode;
   onModeChange: (m: FilterMode) => void;
@@ -23,7 +24,6 @@ interface FiltersBarProps {
 export function FiltersBar(p: FiltersBarProps) {
   const [consumptionPopoverOpen, setConsumptionPopoverOpen] = useState(false);
   const todaySP = todaySaoPaulo();
-  const live = p.mode === 'janela' || (p.periodEnd ?? '') >= todaySP;
 
   return (
     <div className="relative z-20">
@@ -98,16 +98,21 @@ export function FiltersBar(p: FiltersBarProps) {
 
           <div className="flex-1" />
 
-          {/* Chip de consumo acumulado — apenas no Dashboard */}
+          {/* Bloco de consumo por grupo — apenas no Dashboard */}
           {p.onShiftChange && (
-            <ConsumptionSummaryChip
-              summary={p.consumptionSummary}
-              shiftStart={p.shiftStart ?? '07:00'}
-              shiftEnd={p.shiftEnd ?? '19:00'}
-              onApply={p.onShiftChange}
-              onOpenChange={setConsumptionPopoverOpen}
-              live={live}
-            />
+            <>
+              <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground whitespace-nowrap">
+                Consumo
+              </span>
+              <div className="h-4 w-px bg-border" aria-hidden="true" />
+              <ConsumptionSummaryChip
+                summary={p.consumptionSummary}
+                shiftStart={p.shiftStart ?? '07:00'}
+                shiftEnd={p.shiftEnd ?? '19:00'}
+                onApply={p.onShiftChange}
+                onOpenChange={setConsumptionPopoverOpen}
+              />
+            </>
           )}
         </div>
       </div>
