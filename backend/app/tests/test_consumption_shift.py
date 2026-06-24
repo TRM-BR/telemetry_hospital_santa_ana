@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import zoneinfo
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -11,6 +11,10 @@ from app.processing.derivations import flow_from_level
 
 _TZ = zoneinfo.ZoneInfo("America/Sao_Paulo")
 _CAP_L = 40_000.0
+
+# Default period bounds: whole test day 2024-01-15 (SP time)
+_DAY_FROM_MS = int(datetime(2024, 1, 15, 0, 0, 0, tzinfo=_TZ).timestamp() * 1000)
+_DAY_TO_MS   = int(datetime(2024, 1, 16, 0, 0, 0, tzinfo=_TZ).timestamp() * 1000)
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +49,8 @@ def _accumulate_groups(
     groups_pts: list[list[tuple[int, float]]],
     win_start: str = "07:00",
     win_end: str = "19:00",
+    from_dt_ms: int = _DAY_FROM_MS,
+    to_dt_ms: int = _DAY_TO_MS,
 ) -> dict[int, float]:
     """Replicate the group accumulation logic from get_dashboard.
 
@@ -62,13 +68,21 @@ def _accumulate_groups(
                 continue
             bucket_start_ms = bucket_end_ms - 3_600_000
             local_dt = datetime.fromtimestamp(bucket_start_ms / 1000, tz=_TZ)
-            minute_of_day = local_dt.hour * 60 + local_dt.minute
+            mod = local_dt.hour * 60 + local_dt.minute
             if win_start_min == win_end_min:
                 in_window = True
             elif win_start_min < win_end_min:
-                in_window = win_start_min <= minute_of_day < win_end_min
+                in_window = win_start_min <= mod < win_end_min
             else:
-                in_window = minute_of_day >= win_start_min or minute_of_day < win_end_min
+                day0 = local_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                if mod >= win_start_min:
+                    shift_start_dt = day0 + timedelta(minutes=win_start_min)
+                elif mod < win_end_min:
+                    shift_start_dt = day0 - timedelta(days=1) + timedelta(minutes=win_start_min)
+                else:
+                    continue
+                shift_start_ms = int(shift_start_dt.timestamp() * 1000)
+                in_window = from_dt_ms <= shift_start_ms < to_dt_ms
             if in_window:
                 cons_by_group[i] += consumed
 
@@ -174,33 +188,40 @@ def _accumulate_seeded(
     from_dt_ms: int,
     win_start: str = "07:00",
     win_end: str = "19:00",
+    to_dt_ms: int = _DAY_TO_MS,
+    tail_pts: list[tuple[int, float]] | None = None,
 ) -> float:
-    """Replica o pipeline novo: prepend semente + guarda bucket_end > from_dt_ms + filtro janela."""
+    """Replica o pipeline novo: prepend semente + cauda + guarda bucket_end > from_dt_ms + filtro janela."""
     win_start_min = _parse_hhmm(win_start, 7 * 60)
     win_end_min = _parse_hhmm(win_end, 19 * 60)
 
-    if seed_pct is not None and seed_ts_ms is not None:
-        pts_seeded = [(seed_ts_ms, seed_pct)] + pts
-    else:
-        pts_seeded = pts
+    seed_list = [(seed_ts_ms, seed_pct)] if (seed_pct is not None and seed_ts_ms is not None) else []
+    pts_seeded = seed_list + list(pts) + (tail_pts or [])
 
-    hourly_all = flow_from_level.net_flow_hourly(pts_seeded, _CAP_L, "America/Sao_Paulo")
-    hourly_buckets = [(t, v) for t, v in hourly_all if t > from_dt_ms]
+    hourly_all = [(t, v) for t, v in flow_from_level.net_flow_hourly(pts_seeded, _CAP_L, "America/Sao_Paulo") if t > from_dt_ms]
 
     consumed_total = 0.0
-    for bucket_end_ms, delta_l in hourly_buckets:
+    for bucket_end_ms, delta_l in hourly_all:
         consumed = max(0.0, -delta_l)
         if consumed <= 0.0:
             continue
         bucket_start_ms = bucket_end_ms - 3_600_000
         local_dt = datetime.fromtimestamp(bucket_start_ms / 1000, tz=_TZ)
-        minute_of_day = local_dt.hour * 60 + local_dt.minute
+        mod = local_dt.hour * 60 + local_dt.minute
         if win_start_min == win_end_min:
             in_window = True
         elif win_start_min < win_end_min:
-            in_window = win_start_min <= minute_of_day < win_end_min
+            in_window = win_start_min <= mod < win_end_min
         else:
-            in_window = minute_of_day >= win_start_min or minute_of_day < win_end_min
+            day0 = local_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            if mod >= win_start_min:
+                shift_start_dt = day0 + timedelta(minutes=win_start_min)
+            elif mod < win_end_min:
+                shift_start_dt = day0 - timedelta(days=1) + timedelta(minutes=win_start_min)
+            else:
+                continue
+            shift_start_ms = int(shift_start_dt.timestamp() * 1000)
+            in_window = from_dt_ms <= shift_start_ms < to_dt_ms
         if in_window:
             consumed_total += consumed
 
@@ -290,3 +311,80 @@ def test_seed_midnight_crossing_dia_inteiro():
     result = _accumulate_seeded(pts, seed_pct, seed_ts_ms, from_dt_ms, "00:00", "00:00")
     # Dia inteiro: balde [00h,01h) ancorado pela semente captura ~2000 L
     assert result > 1000.0
+
+
+# ---------------------------------------------------------------------------
+# Wrap-forward tests — janela início > fim = turno que cruza meia-noite FORWARD
+# (madrugada pertence ao turno do dia anterior, não ao dia corrente)
+# ---------------------------------------------------------------------------
+
+def _ms2(hour_local: int, day_offset: int = 0, minute: int = 0) -> int:
+    """Epoch ms para hora local (SP) em 2024-01-15 + offset dias."""
+    dt = datetime(2024, 1, 15 + day_offset, hour_local, minute, 0, tzinfo=_TZ)
+    return int(dt.timestamp() * 1000)
+
+
+def test_wrap_future_window_returns_zero():
+    """Janela 11:20→10:00; só há dado até 09h do dia → turno começa às 11:20 que ainda não chegou.
+    Madrugada 00h–09h pertence ao turno do dia ANTERIOR → não conta no período de hoje."""
+    from_dt_ms = int(datetime(2024, 1, 15, 0, 0, 0, tzinfo=_TZ).timestamp() * 1000)
+    to_dt_ms   = int(datetime(2024, 1, 16, 0, 0, 0, tzinfo=_TZ).timestamp() * 1000)
+
+    # dado só até 09h (madrugada, antes de 11:20)
+    pts = [(_ms2(0), 80.0), (_ms2(3), 78.0), (_ms2(6), 76.0), (_ms2(9), 74.0)]
+
+    result = _accumulate_groups([pts], "11:20", "10:00", from_dt_ms, to_dt_ms)
+    assert result[0] == 0.0
+
+
+def test_wrap_tail_counts_next_day():
+    """Janela 19:00→07:00; queda às 02h do dia+1 pertence ao turno iniciado às 19h do dia.
+    Requer tail_pts (dados do dia seguinte buscados pelo fetch estendido)."""
+    from_dt_ms = int(datetime(2024, 1, 15, 0, 0, 0, tzinfo=_TZ).timestamp() * 1000)
+    to_dt_ms   = int(datetime(2024, 1, 16, 0, 0, 0, tzinfo=_TZ).timestamp() * 1000)
+
+    # turno noturno: leitura às 19h do dia, depois queda às 02h do dia+1
+    pts = [(_ms2(19), 80.0), (_ms2(23), 80.0)]
+    tail = [(_ms2(2, day_offset=1), 75.0), (_ms2(7, day_offset=1), 75.0)]
+
+    result = _accumulate_seeded(pts, None, None, from_dt_ms, "19:00", "07:00", to_dt_ms, tail)
+    # 80%→75% = 2000 L entre 23h dia15 e 02h dia16, shift_start = 19h dia15 dentro do período → conta
+    assert result > 1000.0
+
+
+def test_wrap_morning_excluded_from_current_day():
+    """Janela 19:00→07:00; queda às 03h do dia DO PERÍODO pertence ao turno do dia ANTERIOR.
+    Não deve ser contada no período 15/01."""
+    from_dt_ms = int(datetime(2024, 1, 15, 0, 0, 0, tzinfo=_TZ).timestamp() * 1000)
+    to_dt_ms   = int(datetime(2024, 1, 16, 0, 0, 0, tzinfo=_TZ).timestamp() * 1000)
+
+    # queda das 02h às 04h do dia 15: shift_start = 19h dia14 < from_dt → excluída
+    pts = [(_ms2(2), 80.0), (_ms2(4), 77.0), (_ms2(4, minute=30), 77.0)]
+
+    result = _accumulate_groups([pts], "19:00", "07:00", from_dt_ms, to_dt_ms)
+    assert result[0] == 0.0
+
+
+def test_wrap_gap_excluded():
+    """Bucket no gap [fim, início) = fora de qualquer turno → não contado."""
+    from_dt_ms = int(datetime(2024, 1, 15, 0, 0, 0, tzinfo=_TZ).timestamp() * 1000)
+    to_dt_ms   = int(datetime(2024, 1, 16, 0, 0, 0, tzinfo=_TZ).timestamp() * 1000)
+
+    # Janela 19:00→07:00 → gap é [07:00, 19:00)
+    # Queda às 12h (dentro do gap) → excluída
+    pts = [(_ms2(12), 80.0), (_ms2(13), 78.0)]
+
+    result = _accumulate_groups([pts], "19:00", "07:00", from_dt_ms, to_dt_ms)
+    assert result[0] == 0.0
+
+
+def test_wrap_no_regression_daytime_presets():
+    """Presets sem wrap (07–19, 06–18, 08–20) não são afetados pela nova lógica."""
+    pts_day   = [(_ms(10), 80.0), (_ms(11), 78.0)]   # 800 L às 10h
+    pts_night = [(_ms(22), 90.0), (_ms(23), 88.0)]   # 800 L às 22h
+
+    for start, end in [("07:00", "19:00"), ("06:00", "18:00"), ("08:00", "20:00")]:
+        res_day   = _accumulate_groups([pts_day],   start, end)
+        res_night = _accumulate_groups([pts_night], start, end)
+        assert res_day[0] > 0,      f"{start}–{end}: queda diurna deve contar"
+        assert res_night[0] == 0.0, f"{start}–{end}: queda noturna não deve contar"

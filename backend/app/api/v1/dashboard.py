@@ -370,17 +370,28 @@ async def get_dashboard(
     for device_id, metric_name, value, _ts in latest_rows:
         latest_by_device.setdefault(device_id, {})[metric_name] = value
 
+    # Janela de consumo: detectar wrap (início > fim = turno que cruza meia-noite forward)
+    win_start_min = _parse_hhmm(shift_start, 7 * 60)
+    win_end_min = _parse_hhmm(shift_end, 19 * 60)
+    wrap_window = win_start_min > win_end_min
+    to_dt_fetch = (to_dt + timedelta(days=1)) if wrap_window else to_dt
+    to_dt_ms = int(to_dt.timestamp() * 1000)
+
     # Série temporal por (device, metric)
     series_rows = (await db.execute(
         _SQL_SERIES,
-        {"device_ids": device_ids, "metrics": list(_SERIES_METRICS), "from_dt": from_dt, "to_dt": to_dt},
+        {"device_ids": device_ids, "metrics": list(_SERIES_METRICS), "from_dt": from_dt, "to_dt": to_dt_fetch},
     )).fetchall()
     series_by_device: dict[int, dict[str, list[DashSeriesPoint]]] = {}
+    level_m_tail_by_device: dict[int, list[DashSeriesPoint]] = {}
     for device_id, metric_name, value, ts in series_rows:
+        ms = _epoch_ms(ts)
+        if ms >= to_dt_ms:
+            if metric_name == "level_m":
+                level_m_tail_by_device.setdefault(device_id, []).append(DashSeriesPoint(t=ms, v=float(value)))
+            continue
         bucket = series_by_device.setdefault(device_id, {})
-        bucket.setdefault(metric_name, []).append(
-            DashSeriesPoint(t=_epoch_ms(ts), v=float(value))
-        )
+        bucket.setdefault(metric_name, []).append(DashSeriesPoint(t=ms, v=float(value)))
 
     # Leitura-semente: última level_m antes de from_dt por device (ancora 1º balde horário)
     seed_rows = (await db.execute(
@@ -406,8 +417,6 @@ async def get_dashboard(
     group_aggregates: dict[str, dict] = {}
 
     # Consumo acumulado por grupo dentro da janela de horário
-    win_start_min = _parse_hhmm(shift_start, 7 * 60)
-    win_end_min = _parse_hhmm(shift_end, 19 * 60)
     _tz = zoneinfo.ZoneInfo(_FULL_ESTIMATE_TZ)
     cons_by_group: dict[int, float] = {}
     group_labels: dict[int, str] = {}
@@ -476,26 +485,39 @@ async def get_dashboard(
                 seed_lm = seed_level_m_by_device.get(r.device_id)
                 if seed_lm is not None:
                     seed_pt = (seed_lm[0], res_calc.tank_percent(seed_lm[1], cfg))
-            _pts_seeded = ([seed_pt] + _pts) if seed_pt is not None else _pts
-            hourly_all = flow_from_level.net_flow_hourly(_pts_seeded, cfg.group_capacity_l, _FULL_ESTIMATE_TZ)
-            hourly_buckets = [(t, v) for t, v in hourly_all if t > from_dt_ms]
+            # Cauda: leituras do dia+1 para baldes overnight do último turno wrap
+            tail_pts: list[tuple[int, float]] = []
+            if level_m_series:
+                tail_pts = [(p.t, res_calc.tank_percent(p.v, cfg)) for p in level_m_tail_by_device.get(r.device_id, [])]
+            _pts_seeded = ([seed_pt] if seed_pt is not None else []) + _pts + tail_pts
+            hourly_all = [(t, v) for t, v in flow_from_level.net_flow_hourly(_pts_seeded, cfg.group_capacity_l, _FULL_ESTIMATE_TZ) if t > from_dt_ms]
+            # Gráfico: clip ao período original (cauda do dia+1 não aparece nos charts)
             series_out["flow_hourly_lph"] = [
-                DashSeriesPoint(t=t, v=v) for t, v in hourly_buckets
+                DashSeriesPoint(t=t, v=v) for t, v in hourly_all if t <= to_dt_ms
             ]
             # Acumular consumo do grupo dentro da janela de horário
-            for bucket_end_ms, delta_l in hourly_buckets:
+            for bucket_end_ms, delta_l in hourly_all:
                 consumed = max(0.0, -delta_l)
                 if consumed <= 0.0:
                     continue
                 bucket_start_ms = bucket_end_ms - 3_600_000
                 local_dt = datetime.fromtimestamp(bucket_start_ms / 1000, tz=_tz)
-                minute_of_day = local_dt.hour * 60 + local_dt.minute
+                mod = local_dt.hour * 60 + local_dt.minute
                 if win_start_min == win_end_min:
                     in_window = True
                 elif win_start_min < win_end_min:
-                    in_window = win_start_min <= minute_of_day < win_end_min
+                    in_window = win_start_min <= mod < win_end_min
                 else:
-                    in_window = minute_of_day >= win_start_min or minute_of_day < win_end_min
+                    # wrap forward: atribuir bucket ao turno que começa no dia
+                    day0 = local_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                    if mod >= win_start_min:
+                        shift_start_dt = day0 + timedelta(minutes=win_start_min)
+                    elif mod < win_end_min:
+                        shift_start_dt = day0 - timedelta(days=1) + timedelta(minutes=win_start_min)
+                    else:
+                        continue  # gap [fim, início) — fora de qualquer turno
+                    shift_start_ms = int(shift_start_dt.timestamp() * 1000)
+                    in_window = from_dt_ms <= shift_start_ms < to_dt_ms
                 if in_window:
                     cons_by_group[i] += consumed
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Settings } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { SHIFT_PRESETS } from '../../constants/dashboard';
-import type { ConsumptionSummary, GroupConsumption } from '../../types/telemetry';
+import type { ConsumptionSummary, GroupConsumption, FilterMode } from '../../types/telemetry';
 
 interface ConsumptionSummaryChipProps {
   summary?: ConsumptionSummary | null;
@@ -10,6 +10,9 @@ interface ConsumptionSummaryChipProps {
   shiftEnd: string;
   onApply: (start: string, end: string) => void;
   onOpenChange?: (open: boolean) => void;
+  mode?: FilterMode;
+  periodStart?: string;
+  periodEnd?: string;
 }
 
 function formatM3(value?: number) {
@@ -36,6 +39,9 @@ export function ConsumptionSummaryChip({
   shiftEnd,
   onApply,
   onOpenChange,
+  mode,
+  periodStart,
+  periodEnd,
 }: ConsumptionSummaryChipProps) {
   const [open, setOpen] = useState(false);
   const [draftStart, setDraftStart] = useState(shiftStart);
@@ -79,9 +85,17 @@ export function ConsumptionSummaryChip({
     onOpenChange?.(next);
   }
 
+  const toMin = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+  const isWrap = shiftStart !== shiftEnd && toMin(shiftStart) > toMin(shiftEnd);
+  const fmtDM = (iso: string) => { const [, m, d] = iso.split('-').map(Number); return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`; };
+  const nextDM = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); const dt = new Date(y, m - 1, d + 1); return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}`; };
   const windowLabel = shiftStart === shiftEnd
     ? 'Dia inteiro'
-    : `${shiftStart} → ${shiftEnd}`;
+    : isWrap
+      ? mode === 'periodo' && periodStart && periodEnd
+        ? `${shiftStart} (${fmtDM(periodStart)}) → ${shiftEnd} (${nextDM(periodEnd)})`
+        : `${shiftStart} (hoje) → ${shiftEnd} (amanhã)`
+      : `${shiftStart} → ${shiftEnd}`;
 
   const groups = summary?.groups ?? [];
 
@@ -100,7 +114,7 @@ export function ConsumptionSummaryChip({
       >
         {groups.length > 0 ? (
           <>
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex items-stretch gap-3">
                 {groups.flatMap((g, idx) => [
                   ...(idx > 0

@@ -113,6 +113,9 @@ export function FiltersBar(p: FiltersBarProps) {
                 shiftEnd={p.shiftEnd ?? '19:00'}
                 onApply={p.onShiftChange}
                 onOpenChange={setConsumptionPopoverOpen}
+                mode={p.mode}
+                periodStart={p.periodStart}
+                periodEnd={p.periodEnd}
               />
             </>
           )}
