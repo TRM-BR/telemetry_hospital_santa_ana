@@ -24,6 +24,7 @@ import Dashboard from './pages/Dashboard';
 import Alerts from './pages/Alerts';
 import Remotas from './pages/Remotas';
 import WeatherDashboard from './pages/WeatherDashboard';
+import EnergyDashboard from './pages/EnergyDashboard';
 import NotFound from './pages/NotFound';
 import { AppSidebar, AppSidebarProvider, useAppSidebar } from './components/AppSidebar';
 
@@ -116,6 +117,14 @@ function AppContent() {
             element={
               <RequireAuth>
                 <Remotas />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/instalacao/:slug/energia"
+            element={
+              <RequireAuth>
+                <EnergyDashboard />
               </RequireAuth>
             }
           />

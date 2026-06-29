@@ -1,6 +1,6 @@
 import { useState, createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
-import { LogOut, Map as MapIcon, AlertTriangle, Radio, Pin, CheckSquare } from 'lucide-react';
+import { LogOut, Map as MapIcon, AlertTriangle, Radio, Pin, CheckSquare, Zap } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/cn';
@@ -48,10 +48,11 @@ export function useAppSidebar(): AppSidebarContextType {
 }
 
 const BASE_NAV_ITEMS = [
-  { to: '/menu',    label: 'Menu',    Icon: MapIcon       },
-  { to: '/remotas', label: 'Remotas', Icon: Radio         },
+  { to: '/menu',                        label: 'Menu',    Icon: MapIcon       },
+  { to: '/remotas',                     label: 'Remotas', Icon: Radio         },
+  { to: '/instalacao/escola/energia',   label: 'Energia', Icon: Zap           },
   // { to: '/meteorologia', label: 'Clima', Icon: CloudRain  },
-  { to: '/alertas', label: 'Avisos',  Icon: AlertTriangle },
+  { to: '/alertas',                     label: 'Avisos',  Icon: AlertTriangle },
 ] as const;
 
 const APPROVER_NAV_ITEMS = [
