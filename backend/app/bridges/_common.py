@@ -53,6 +53,7 @@ INSERT INTO raw_messages (
     imei,
     payload_raw,
     payload_hash,
+    dedup_hash,
     parse_status
 )
 VALUES (
@@ -62,9 +63,10 @@ VALUES (
     %(imei)s,
     %(payload_raw)s,
     %(payload_hash)s,
+    %(dedup_hash)s,
     'pending'
 )
-ON CONFLICT (origin, topic, payload_hash) DO NOTHING
+ON CONFLICT (origin, topic, dedup_hash) DO NOTHING
 RETURNING id;
 """
 
@@ -76,6 +78,8 @@ def write_raw(
     payload_raw: str,
     origin: str = "mqtt",
     imei: Optional[str] = None,
+    received_at_utc: Optional[datetime] = None,
+    dedup_hash: Optional[str] = None,
 ) -> Optional[int]:
     """
     Insere uma mensagem bruta em raw_messages de forma atômica.
@@ -88,29 +92,41 @@ def write_raw(
     - Lança exceção em qualquer outro erro — deixar o chamador decidir.
 
     Args:
-        con:         Conexão psycopg2 aberta (autocommit=False).
-        topic:       Tópico MQTT original (ex.: 'SN50/data/868927084622450').
-        payload_raw: Payload bruto decodificado como string UTF-8.
-        origin:      Origem da mensagem ('mqtt' | 'api').
-        imei:        IMEI extraído do tópico ou payload (pode ser None se
-                     indisponível antes da bridge — o parse_worker descobre).
+        con:             Conexão psycopg2 aberta (autocommit=False).
+        topic:           Tópico MQTT original (ex.: 'SN50/data/868927084622450').
+        payload_raw:     Payload bruto decodificado como string UTF-8.
+        origin:          Origem da mensagem ('mqtt' | 'api').
+        imei:            IMEI extraído do tópico ou payload (pode ser None).
+        received_at_utc: Instante de chegada gerado no app. Se None, usa now().
+                         Para energia deve ser gerado pelo chamador e reutilizado
+                         no cálculo de dedup_hash.
+        dedup_hash:      Hash usado para deduplicação. Se None, usa payload_hash
+                         (comportamento SN50). Para energia, o chamador passa
+                         sha256(payload_raw | received_at_second).
 
     Returns:
         int  → id da linha inserida.
         None → mensagem duplicada (ON CONFLICT), ignorada normalmente.
     """
+    if received_at_utc is None:
+        received_at_utc = datetime.now(tz=timezone.utc)
+
     payload_hash = hashlib.sha256(payload_raw.encode("utf-8", errors="replace")).hexdigest()
+
+    if dedup_hash is None:
+        dedup_hash = payload_hash
 
     with con.cursor() as cur:
         cur.execute(
             _INSERT_RAW,
             {
-                "received_at_utc": datetime.now(tz=timezone.utc),
+                "received_at_utc": received_at_utc,
                 "origin": origin,
                 "topic": topic,
                 "imei": imei,
                 "payload_raw": payload_raw,
                 "payload_hash": payload_hash,
+                "dedup_hash": dedup_hash,
             },
         )
         row = cur.fetchone()

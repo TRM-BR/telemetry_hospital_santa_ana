@@ -26,12 +26,14 @@ Adaptações para SN50_analog (DTN-200-FPS0):
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import signal
 import socket
 import ssl
 import sys
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import paho.mqtt.client as mqtt
@@ -66,6 +68,28 @@ def _imei_from_topic(topic: str) -> Optional[str]:
     if parts[-1].isdigit() and len(parts[-1]) >= 10:
         return parts[-1]
     return None
+
+
+def _is_energy_topic(topic: str) -> bool:
+    """Retorna True para tópicos de medição de energia (sem IMEI no tópico/payload)."""
+    return topic == "/param_energ"
+
+
+def _compute_dedup_hash(topic: str, payload_raw: str, received_at_utc: datetime) -> str:
+    """
+    Calcula o hash de deduplicação por tipo de tópico.
+
+    - Energia (/param_energ): sha256(payload | received_at_second)
+      O payload não traz timestamp e é idêntico em repouso; incluir o segundo
+      de chegada garante que heartbeats distintos não sejam descartados.
+    - Demais (SN50 etc.): sha256(payload_raw) — idêntico ao payload_hash,
+      mantendo o comportamento original.
+    """
+    raw_bytes = payload_raw.encode("utf-8", errors="replace")
+    if _is_energy_topic(topic):
+        ts_s = received_at_utc.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+        raw_bytes = raw_bytes + b"|" + ts_s.encode()
+    return hashlib.sha256(raw_bytes).hexdigest()
 
 
 def _imei_from_payload(payload_raw: str) -> Optional[str]:
@@ -191,13 +215,26 @@ class MQTTBridge:
         """
         topic = getattr(msg, "topic", "") or ""
         payload_raw = msg.payload.decode("utf-8", errors="replace")
-        # SN50_analog/data não tem IMEI no tópico — extrai do payload JSON
+        # SN50_analog/data não tem IMEI no tópico — extrai do payload JSON.
+        # Energia (/param_energ) usa external_id, não IMEI — imei fica None.
         imei = _imei_from_topic(topic) or _imei_from_payload(payload_raw)
+
+        # received_at_utc gerado no app (não DEFAULT now() do banco).
+        # O mesmo valor é usado na coluna E no cálculo de dedup_hash de energia.
+        received_at_utc = datetime.now(tz=timezone.utc)
+        dedup_hash = _compute_dedup_hash(topic, payload_raw, received_at_utc)
 
         row_id: Optional[int] = None
         try:
             con = self._ensure_db()
-            row_id = write_raw(con, topic=topic, payload_raw=payload_raw, imei=imei)
+            row_id = write_raw(
+                con,
+                topic=topic,
+                payload_raw=payload_raw,
+                imei=imei,
+                received_at_utc=received_at_utc,
+                dedup_hash=dedup_hash,
+            )
             con.commit()
         except Exception as exc:
             # Falha no banco: rollback, NÃO acker.
