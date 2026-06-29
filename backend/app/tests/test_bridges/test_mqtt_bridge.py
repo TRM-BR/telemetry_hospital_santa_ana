@@ -7,11 +7,12 @@ testam apenas funções puras / lógica isolada.
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.bridges.mqtt_bridge import _imei_from_topic
+from app.bridges.mqtt_bridge import _compute_dedup_hash, _imei_from_topic, _is_energy_topic
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +73,70 @@ class TestWriteRawHash:
         h1 = hashlib.sha256(b"payload_a").hexdigest()
         h2 = hashlib.sha256(b"payload_b").hexdigest()
         assert h1 != h2
+
+
+# ---------------------------------------------------------------------------
+# Dedup hash — energia vs SN50
+# ---------------------------------------------------------------------------
+
+class TestDedupHash:
+    """
+    Gate de regressão: dedup_hash de energia usa received_at_utc truncado ao
+    segundo, garantindo que payloads idênticos em segundos diferentes gerem
+    hashes distintos (→ 2 linhas RAW).
+    SN50: dedup_hash == sha256(payload) — sem timestamp no hash.
+    """
+
+    _ENERGY_TOPIC = "/param_energ"
+    _SN50_TOPIC = "SN50_analog/data"
+    _PAYLOAD = '{"id":"iemedidor","pt":"-1000.5"}'
+
+    def _ts(self, second: int) -> datetime:
+        return datetime(2024, 6, 1, 12, 0, second, 0, tzinfo=timezone.utc)
+
+    def test_energy_same_payload_different_second_yields_different_hash(self):
+        """Gate: 2 payloads idênticos em segundos diferentes → hashes distintos."""
+        h1 = _compute_dedup_hash(self._ENERGY_TOPIC, self._PAYLOAD, self._ts(0))
+        h2 = _compute_dedup_hash(self._ENERGY_TOPIC, self._PAYLOAD, self._ts(1))
+        assert h1 != h2
+
+    def test_energy_same_payload_same_second_yields_same_hash(self):
+        """Dentro do mesmo segundo: dedup funciona (mesma hash → ON CONFLICT)."""
+        h1 = _compute_dedup_hash(self._ENERGY_TOPIC, self._PAYLOAD, self._ts(5))
+        h2 = _compute_dedup_hash(self._ENERGY_TOPIC, self._PAYLOAD, self._ts(5))
+        assert h1 == h2
+
+    def test_energy_microsecond_difference_same_second_yields_same_hash(self):
+        """Microsegundos diferentes no mesmo segundo → mesmo hash (truncado ao segundo)."""
+        t1 = datetime(2024, 6, 1, 12, 0, 10, 0, tzinfo=timezone.utc)
+        t2 = datetime(2024, 6, 1, 12, 0, 10, 999999, tzinfo=timezone.utc)
+        h1 = _compute_dedup_hash(self._ENERGY_TOPIC, self._PAYLOAD, t1)
+        h2 = _compute_dedup_hash(self._ENERGY_TOPIC, self._PAYLOAD, t2)
+        assert h1 == h2
+
+    def test_sn50_dedup_hash_equals_payload_sha256(self):
+        """SN50: dedup_hash é sha256 puro do payload (sem timestamp)."""
+        payload = '{"IMEI":"868927084622450","time":"2024-01-01T00:00:00Z"}'
+        ts = self._ts(0)
+        h = _compute_dedup_hash(self._SN50_TOPIC, payload, ts)
+        expected = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        assert h == expected
+
+    def test_sn50_same_payload_different_time_yields_same_hash(self):
+        """SN50: dois recebimentos idênticos colidem (dedup correto)."""
+        payload = '{"IMEI":"868927084622450","x":1}'
+        h1 = _compute_dedup_hash(self._SN50_TOPIC, payload, self._ts(0))
+        h2 = _compute_dedup_hash(self._SN50_TOPIC, payload, self._ts(30))
+        assert h1 == h2
+
+    def test_is_energy_topic_true_for_param_energ(self):
+        assert _is_energy_topic("/param_energ") is True
+
+    def test_is_energy_topic_false_for_sn50(self):
+        assert _is_energy_topic("SN50_analog/data") is False
+
+    def test_is_energy_topic_false_for_empty(self):
+        assert _is_energy_topic("") is False
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +217,21 @@ class TestMQTTBridgeOnMessage:
             bridge.on_message(mock_client, None, mock_msg)
 
         mock_client.ack.assert_not_called()
+
+    def test_ack_called_for_energy_topic(self):
+        """Tópico /param_energ também deve ser ACK-ado após commit bem-sucedido."""
+        bridge = self._make_bridge()
+        mock_client = MagicMock()
+        mock_msg = self._make_msg("/param_energ", '{"id":"iemedidor","pt":"-1000"}')
+
+        mock_con = MagicMock()
+        with (
+            patch.object(bridge, "_ensure_db", return_value=mock_con),
+            patch("app.bridges.mqtt_bridge.write_raw", return_value=99),
+        ):
+            bridge.on_message(mock_client, None, mock_msg)
+
+        mock_client.ack.assert_called_once_with(mock_msg.mid, mock_msg.qos)
 
     def test_duplicate_still_acks(self):
         """
