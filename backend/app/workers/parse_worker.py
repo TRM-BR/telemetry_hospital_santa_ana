@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 # Rejeita timestamps com bug de RTC e timestamps absurdamente futuros.
@@ -29,6 +30,7 @@ _MIN_VALID_TS = datetime(2025, 1, 1, tzinfo=timezone.utc)
 _MAX_FUTURE_OFFSET = timedelta(hours=1)
 
 _ANALOG_TOPIC_ROOT = "SN50_analog/"
+_ENERGY_TOPIC = "/param_energ"
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,11 +38,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.session import get_session
 from app.logging import get_logger
-from app.processing.parsers import sn50_analog
+from app.processing.parsers import sm3egw_energy, sn50_analog
 from app.processing.parsers.base import ParsedReading
 from app.workers._runner import WorkerRunner
 
 logger = get_logger(__name__)
+
+
+def _is_energy_topic(topic: str) -> bool:
+    return topic == _ENERGY_TOPIC
+
+
+def _to_decimal(v: Optional[str]) -> Optional[Decimal]:
+    """String decimal → Decimal; None ou inválido → None."""
+    if v is None:
+        return None
+    try:
+        return Decimal(v)
+    except (InvalidOperation, TypeError):
+        return None
 
 
 def _is_analog_payload(topic: str, payload_raw: str) -> bool:
@@ -146,6 +162,51 @@ class ParseWorker(WorkerRunner):
         ON CONFLICT (device_id, installation_id) WHERE valid_to IS NULL DO NOTHING
     """)
 
+    # Resolve device pelo external_id (SM-3EGW — sem IMEI numérico)
+    _SQL_DEVICE_BY_EXTERNAL_ID = text("""
+        SELECT id FROM devices WHERE external_id = :external_id LIMIT 1
+    """)
+
+    # INSERT energy_measurement — dedup por (device_id, collected_at_utc)
+    _SQL_INSERT_ENERGY = text("""
+        INSERT INTO energy_measurements (
+            raw_message_id, device_id, installation_id,
+            collected_at_utc,
+            active_power_total_w,
+            reactive_power_total_var,
+            voltage_phase_a_v,
+            voltage_phase_b_v,
+            voltage_phase_c_v,
+            current_total_a,
+            power_factor_total,
+            active_energy_consumed_total_kwh,
+            active_energy_generated_total_kwh,
+            reactive_energy_generated_total_kvarh,
+            delta_active_energy_consumed_kwh,
+            delta_active_energy_generated_kwh,
+            gsm_signal_rssi_dbm,
+            created_at
+        ) VALUES (
+            :raw_message_id, :device_id, :installation_id,
+            :collected_at_utc,
+            :active_power_total_w,
+            :reactive_power_total_var,
+            :voltage_phase_a_v,
+            :voltage_phase_b_v,
+            :voltage_phase_c_v,
+            :current_total_a,
+            :power_factor_total,
+            :active_energy_consumed_total_kwh,
+            :active_energy_generated_total_kwh,
+            :reactive_energy_generated_total_kvarh,
+            :delta_active_energy_consumed_kwh,
+            :delta_active_energy_generated_kwh,
+            :gsm_signal_rssi_dbm,
+            now()
+        )
+        ON CONFLICT (device_id, collected_at_utc) DO NOTHING
+    """)
+
     # INSERT parsed_measurement analógico — dedup por (device_id, collected_at_utc)
     _SQL_INSERT_PARSED = text("""
         INSERT INTO parsed_measurements (
@@ -237,6 +298,37 @@ class ParseWorker(WorkerRunner):
         )
         return device_id
 
+    async def _resolve_energy_device(
+        self,
+        session: AsyncSession,
+        external_id: str,
+        raw_id: int,
+        device_cache: dict[str, Optional[int]],
+    ) -> Optional[int]:
+        """
+        Resolve device_id pelo external_id (SM-3EGW).
+        Sem autodetecção — device deve estar seedado via migration 0023.
+        Retorna device_id ou None se não encontrado.
+        """
+        if external_id in device_cache:
+            return device_cache[external_id]
+
+        row = await session.execute(
+            self._SQL_DEVICE_BY_EXTERNAL_ID, {"external_id": external_id}
+        )
+        dev = row.fetchone()
+        device_id = dev[0] if dev else None
+
+        if device_id is None:
+            self._log.error(
+                "parse_worker.energy_device_not_found",
+                raw_id=raw_id,
+                external_id=external_id,
+            )
+
+        device_cache[external_id] = device_id
+        return device_id
+
     # ── Implementações obrigatórias ─────────────────────────────────────────
 
     async def claim_batch(self, session: AsyncSession) -> list[int]:
@@ -257,10 +349,10 @@ class ParseWorker(WorkerRunner):
             return []
 
         rows_result = await session.execute(
-            text("SELECT id, topic, payload_raw FROM raw_messages WHERE id = ANY(:ids)"),
+            text("SELECT id, topic, payload_raw, received_at_utc FROM raw_messages WHERE id = ANY(:ids)"),
             {"ids": list(row_ids)},
         )
-        rows = {row[0]: (row[1], row[2]) for row in rows_result.fetchall()}
+        rows = {row[0]: (row[1], row[2], row[3]) for row in rows_result.fetchall()}
 
         done_ids: list[int] = []
         device_cache: dict[str, Optional[int]] = {}
@@ -270,7 +362,66 @@ class ParseWorker(WorkerRunner):
             row = rows.get(raw_id)
             if row is None:
                 continue
-            topic, payload_raw = row
+            topic, payload_raw, received_at_utc = row
+
+            # ── Branch de energia (/param_energ → energy_measurements) ────────
+            if _is_energy_topic(topic):
+                result_e = sm3egw_energy.parse(payload_raw)
+                if result_e.failed:
+                    self._log.warning(
+                        "parse_worker.energy_parse_failed",
+                        raw_id=raw_id,
+                        reason=result_e.reason,
+                    )
+                    done_ids.append(raw_id)
+                    continue
+
+                reading = result_e.reading
+                device_id = await self._resolve_energy_device(
+                    session, reading.device_external_id, raw_id, device_cache
+                )
+                if device_id is None:
+                    # Device não seedado — erro permanente; não tenta de novo.
+                    done_ids.append(raw_id)
+                    continue
+
+                inst_result = await session.execute(
+                    self._SQL_INSTALLATION, {"device_id": device_id}
+                )
+                inst_row = inst_result.fetchone()
+                installation_id = inst_row[0] if inst_row else None
+
+                await session.execute(
+                    self._SQL_INSERT_ENERGY,
+                    {
+                        "raw_message_id": raw_id,
+                        "device_id": device_id,
+                        "installation_id": installation_id,
+                        "collected_at_utc": received_at_utc,
+                        "active_power_total_w": reading.active_power_total_w,
+                        "reactive_power_total_var": reading.reactive_power_total_var,
+                        "voltage_phase_a_v": reading.voltage_phase_a_v,
+                        "voltage_phase_b_v": reading.voltage_phase_b_v,
+                        "voltage_phase_c_v": reading.voltage_phase_c_v,
+                        "current_total_a": reading.current_total_a,
+                        "power_factor_total": reading.power_factor_total,
+                        "active_energy_consumed_total_kwh": _to_decimal(reading.active_energy_consumed_total_kwh),
+                        "active_energy_generated_total_kwh": _to_decimal(reading.active_energy_generated_total_kwh),
+                        "reactive_energy_generated_total_kvarh": _to_decimal(reading.reactive_energy_generated_total_kvarh),
+                        "delta_active_energy_consumed_kwh": _to_decimal(reading.delta_active_energy_consumed_kwh),
+                        "delta_active_energy_generated_kwh": _to_decimal(reading.delta_active_energy_generated_kwh),
+                        "gsm_signal_rssi_dbm": reading.gsm_signal_rssi_dbm,
+                    },
+                )
+                self._log.info(
+                    "parse_worker.energy_parsed",
+                    raw_id=raw_id,
+                    device_id=device_id,
+                    installation_id=installation_id,
+                    collected_at_utc=received_at_utc.isoformat() if received_at_utc else None,
+                )
+                done_ids.append(raw_id)
+                continue
 
             if not _is_analog_payload(topic, payload_raw):
                 # Tópico/model não analógico — permanente (sem parser disponível)
