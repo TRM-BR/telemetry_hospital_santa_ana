@@ -9,6 +9,16 @@ Estratégia:
   - Índice unique parcial WHERE external_id IS NOT NULL — NULL não viola o unique.
   - imei continua UNIQUE NOT NULL — sem regressão no autodetect.
 
+Idempotência:
+  - ADD COLUMN IF NOT EXISTS em todos os campos — label e status podem já
+    existir no banco de hml se foram adicionados manualmente ou por outro path.
+  - CREATE UNIQUE INDEX IF NOT EXISTS no índice de external_id.
+
+Downgrade:
+  - Remove apenas external_id (coluna nova introduzida por esta migration) e
+    o índice novo. label e status NÃO são dropados no downgrade porque podem
+    ser preexistentes no schema; dropar seria destrutivo sem garantia de origem.
+
 Revision ID: 0021
 Revises: 0020
 """
@@ -24,23 +34,19 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "devices",
-        sa.Column("external_id", sa.String(64), nullable=True),
+    # ADD COLUMN IF NOT EXISTS — seguro se a coluna já existir por qualquer motivo.
+    op.execute(
+        "ALTER TABLE devices ADD COLUMN IF NOT EXISTS external_id VARCHAR(64) NULL;"
     )
-    # Também adiciona label e status — campos usados no seed do SM-3EGW
-    # e ausentes no modelo ORM atual (adicionados aqui para não criar migration extra).
-    op.add_column(
-        "devices",
-        sa.Column("label", sa.String(128), nullable=True),
+    op.execute(
+        "ALTER TABLE devices ADD COLUMN IF NOT EXISTS label VARCHAR(128) NULL;"
     )
-    op.add_column(
-        "devices",
-        sa.Column("status", sa.String(32), nullable=True),
+    op.execute(
+        "ALTER TABLE devices ADD COLUMN IF NOT EXISTS status VARCHAR(32) NULL;"
     )
     op.execute(
         """
-        CREATE UNIQUE INDEX uq_devices_external_id
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_devices_external_id
         ON devices (external_id)
         WHERE external_id IS NOT NULL;
         """
@@ -48,7 +54,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX IF EXISTS uq_devices_external_id")
-    op.drop_column("devices", "status")
-    op.drop_column("devices", "label")
-    op.drop_column("devices", "external_id")
+    # Remove apenas o que esta migration introduziu de forma inequívoca.
+    # label e status são omitidos: podem ser preexistentes e dropar seria destrutivo.
+    op.execute("DROP INDEX IF EXISTS uq_devices_external_id;")
+    op.execute("ALTER TABLE devices DROP COLUMN IF EXISTS external_id;")
