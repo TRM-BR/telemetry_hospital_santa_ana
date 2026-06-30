@@ -4,7 +4,7 @@ import { buildEnergyDashboardMock } from '../mocks/energyDashboardMock';
 import type { EnergyDashboardResponse } from '../types/energy';
 
 const MOCKS_ENABLED = import.meta.env.VITE_ENABLE_MOCKS === 'true';
-const DEV_MOCK_FALLBACK_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCKS !== 'false';
+const DEV_MOCK_FALLBACK_ENABLED = import.meta.env.VITE_ENABLE_MOCKS !== 'false';
 
 function hasEnergyData(data: EnergyDashboardResponse): boolean {
   return (
