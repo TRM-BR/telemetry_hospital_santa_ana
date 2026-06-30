@@ -153,6 +153,7 @@ class EnergyLatest(BaseModel):
     voltage_phase_a_v: Optional[float] = None
     voltage_phase_b_v: Optional[float] = None
     voltage_phase_c_v: Optional[float] = None
+    voltage_avg_v: Optional[float] = None
     current_total_a: Optional[float] = None
     power_factor_total: Optional[float] = None
     active_energy_consumed_total_kwh: Optional[float] = None
@@ -259,12 +260,19 @@ async def get_energy_dashboard(
         raw_ts = lat["collected_at_utc"]
         if raw_ts is not None:
             last_seen = raw_ts if raw_ts.tzinfo else raw_ts.replace(tzinfo=timezone.utc)
+        va = _fv(lat["voltage_phase_a_v"])
+        vb = _fv(lat["voltage_phase_b_v"])
+        vc = _fv(lat["voltage_phase_c_v"])
+        _phases = [v for v in (va, vb, vc) if v is not None]
+        voltage_avg = round(sum(_phases) / len(_phases), 2) if _phases else None
+
         latest = EnergyLatest(
             active_power_total_w=_fv(lat["active_power_total_w"]),
             reactive_power_total_var=_fv(lat["reactive_power_total_var"]),
-            voltage_phase_a_v=_fv(lat["voltage_phase_a_v"]),
-            voltage_phase_b_v=_fv(lat["voltage_phase_b_v"]),
-            voltage_phase_c_v=_fv(lat["voltage_phase_c_v"]),
+            voltage_phase_a_v=va,
+            voltage_phase_b_v=vb,
+            voltage_phase_c_v=vc,
+            voltage_avg_v=voltage_avg,
             current_total_a=_fv(lat["current_total_a"]),
             power_factor_total=_fv(lat["power_factor_total"]),
             active_energy_consumed_total_kwh=_fv(lat["active_energy_consumed_total_kwh"]),

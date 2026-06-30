@@ -40,6 +40,19 @@ function toChartSeries(
   };
 }
 
+function gsmLabel(dbm: number | null): string {
+  if (dbm === null) return 'Sem sinal';
+  if (dbm < -110) return 'Muito fraco';
+  if (dbm < -90)  return 'Fraco';
+  if (dbm < -70)  return 'Bom';
+  return 'Excelente';
+}
+
+function gsmHintTone(dbm: number | null): 'default' | 'accent' | 'danger' {
+  if (dbm === null || dbm < -90) return 'danger';
+  return 'default';
+}
+
 function WindowSelector({
   value,
   onChange,
@@ -79,14 +92,26 @@ function OfflineBanner({ lastSeen }: { lastSeen: string | null }) {
   );
 }
 
-function KpiSkeleton() {
+function KpiSkeleton({ featured }: { featured?: boolean }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-      <div className="space-y-3">
-        <Skeleton className="h-2.5 w-16" />
-        <Skeleton className="h-9 w-28" />
+      <div className="flex items-start justify-between">
+        <div className="space-y-2.5">
+          <Skeleton className="h-2.5 w-16" />
+          <Skeleton className={cn('w-28', featured ? 'h-11' : 'h-9')} />
+        </div>
+        <Skeleton className="h-10 w-10 rounded-xl" />
       </div>
+      <Skeleton className="mt-4 h-7 w-full rounded" />
     </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-3">
+      {children}
+    </p>
   );
 }
 
@@ -101,6 +126,10 @@ export default function EnergyDashboard() {
   const latest = data?.latest;
   const series = data?.series ?? {};
   const bars   = data?.bars   ?? [];
+
+  // Spark helpers — last 30 points of each series (display only, no calculation)
+  const spark = (col: string): number[] =>
+    (series[col] ?? []).slice(-30).map((p: EnergySeriesPoint) => p.v);
 
   // ── Séries para HistoryChart ─────────────────────────────────────────────
 
@@ -130,14 +159,15 @@ export default function EnergyDashboard() {
   ], [series]);
 
   const wk = windowKey as unknown as WindowKey;
+  const muted = data ? !data.online : false;
 
-  // ── Média das três fases para KPI de tensão ──────────────────────────────
-  const voltageAvg = useMemo(() => {
-    const vals = [latest?.voltage_phase_a_v, latest?.voltage_phase_b_v, latest?.voltage_phase_c_v]
-      .filter((v): v is number => v !== null && v !== undefined);
-    if (!vals.length) return null;
-    return vals.reduce((a, b) => a + b, 0) / vals.length;
-  }, [latest]);
+  const hasPower   = powerSeries.some((s) => s.data.length > 0);
+  const hasVoltage = voltageSeries.some((s) => s.data.length > 0);
+  const hasCurrent = currentSeries[0].data.length > 0;
+  const hasPf      = pfSeries[0].data.length > 0;
+  const hasAccum   = accumSeries.some((s) => s.data.length > 0);
+
+  const gsm = latest?.gsm_signal_rssi_dbm ?? null;
 
   return (
     <div className="min-h-screen w-full bg-secondary">
@@ -156,23 +186,32 @@ export default function EnergyDashboard() {
             Voltar
           </button>
 
-          <div className="flex items-center gap-2 text-primary">
-            <Zap className="h-4 w-4" />
-            <span className="text-sm font-semibold text-foreground">
-              {data?.installation_name ?? 'Energia'}
-            </span>
-            {data && (
-              <span
-                className={cn(
-                  'rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide',
-                  data.online
-                    ? 'bg-emerald-500/15 text-emerald-500'
-                    : 'bg-destructive/15 text-destructive',
-                )}
-              >
-                {data.online ? 'online' : 'offline'}
+          <div className="flex flex-col items-center gap-0.5">
+            <div className="flex items-center gap-2 text-primary">
+              <Zap className="h-4 w-4" />
+              <span className="text-sm font-semibold text-foreground">
+                {data?.installation_name ?? 'Energia'}
               </span>
-            )}
+              {data && (
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide',
+                    data.online
+                      ? 'bg-emerald-500/15 text-emerald-500'
+                      : 'bg-destructive/15 text-destructive',
+                  )}
+                >
+                  {data.online && (
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    </span>
+                  )}
+                  {data.online ? 'online' : 'offline'}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] text-muted-foreground">Medidor SM-3EGW · atualiza a cada {AUTO_REFRESH_MS / 1000}s</span>
           </div>
 
           <WindowSelector value={windowKey} onChange={setWindowKey} />
@@ -192,163 +231,185 @@ export default function EnergyDashboard() {
           <OfflineBanner lastSeen={data.last_seen_utc} />
         )}
 
-        {/* KPI cards */}
-        <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {isLoading ? (
-            Array.from({ length: 8 }).map((_, i) => <KpiSkeleton key={i} />)
-          ) : (
-            <>
-              <KpiCard
-                icon={Zap}
-                label="Potência ativa"
-                value={latest?.active_power_total_w ?? 0}
-                suffix="W"
-                decimals={1}
-                tone={
-                  (latest?.active_power_total_w ?? 0) < 0 ? 'accent' : 'default'
-                }
-                delayMs={0}
-              />
-              <KpiCard
-                icon={Activity}
-                label="Potência reativa"
-                value={latest?.reactive_power_total_var ?? 0}
-                suffix="VAr"
-                decimals={1}
-                delayMs={50}
-              />
-              <KpiCard
-                icon={Gauge}
-                label="Tensão média"
-                value={voltageAvg ?? 0}
-                suffix="V"
-                decimals={1}
-                delayMs={100}
-              />
-              <KpiCard
-                icon={Activity}
-                label="Corrente total"
-                value={latest?.current_total_a ?? 0}
-                suffix="A"
-                decimals={2}
-                delayMs={150}
-              />
-              <KpiCard
-                icon={Gauge}
-                label="Fator de potência"
-                value={latest?.power_factor_total ?? 0}
-                decimals={3}
-                delayMs={200}
-              />
-              <KpiCard
-                icon={TrendingDown}
-                label="Consumo acumulado"
-                value={latest?.active_energy_consumed_total_kwh ?? 0}
-                suffix="kWh"
-                decimals={3}
-                tone="danger"
-                delayMs={250}
-              />
-              <KpiCard
-                icon={TrendingUp}
-                label="Geração acumulada"
-                value={latest?.active_energy_generated_total_kwh ?? 0}
-                suffix="kWh"
-                tone="accent"
-                decimals={3}
-                delayMs={300}
-              />
-              <KpiCard
-                icon={Signal}
-                label="Sinal GSM"
-                value={latest?.gsm_signal_rssi_dbm ?? 0}
-                suffix="dBm"
-                decimals={0}
-                tone={
-                  latest?.gsm_signal_rssi_dbm === null
-                    ? 'danger'
-                    : (latest?.gsm_signal_rssi_dbm ?? 0) < -90
-                      ? 'danger'
-                      : 'default'
-                }
-                delayMs={350}
-              />
-            </>
-          )}
+        {/* ── Seção 1: Indicadores principais ────────────────────────────── */}
+        <section>
+          <SectionLabel>Indicadores principais</SectionLabel>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {isLoading ? (
+              Array.from({ length: 4 }).map((_, i) => <KpiSkeleton key={i} featured />)
+            ) : (
+              <>
+                <KpiCard
+                  icon={Zap}
+                  label="Potência ativa"
+                  value={latest?.active_power_total_w ?? 0}
+                  suffix="W"
+                  decimals={1}
+                  tone={(latest?.active_power_total_w ?? 0) < 0 ? 'accent' : 'default'}
+                  spark={spark('active_power_total_w')}
+                  featured
+                  delayMs={0}
+                />
+                <KpiCard
+                  icon={Activity}
+                  label="Potência reativa"
+                  value={latest?.reactive_power_total_var ?? 0}
+                  suffix="VAr"
+                  decimals={1}
+                  spark={spark('reactive_power_total_var')}
+                  featured
+                  delayMs={50}
+                />
+                <KpiCard
+                  icon={Gauge}
+                  label="Tensão média"
+                  value={latest?.voltage_avg_v ?? 0}
+                  suffix="V"
+                  decimals={1}
+                  spark={spark('voltage_phase_a_v')}
+                  featured
+                  delayMs={100}
+                />
+                <KpiCard
+                  icon={Activity}
+                  label="Corrente total"
+                  value={latest?.current_total_a ?? 0}
+                  suffix="A"
+                  decimals={2}
+                  spark={spark('current_total_a')}
+                  featured
+                  delayMs={150}
+                />
+              </>
+            )}
+          </div>
         </section>
 
-        {/* Gráfico de barras divergente */}
+        {/* ── Seção 2: Qualidade e contexto ──────────────────────────────── */}
+        <section>
+          <SectionLabel>Qualidade e contexto</SectionLabel>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {isLoading ? (
+              Array.from({ length: 4 }).map((_, i) => <KpiSkeleton key={i} />)
+            ) : (
+              <>
+                <KpiCard
+                  icon={Gauge}
+                  label="Fator de potência"
+                  value={latest?.power_factor_total ?? 0}
+                  decimals={3}
+                  spark={spark('power_factor_total')}
+                  delayMs={0}
+                />
+                <KpiCard
+                  icon={TrendingDown}
+                  label="Consumo acumulado"
+                  value={latest?.active_energy_consumed_total_kwh ?? 0}
+                  suffix="kWh"
+                  decimals={3}
+                  tone="danger"
+                  delayMs={50}
+                />
+                <KpiCard
+                  icon={TrendingUp}
+                  label="Geração acumulada"
+                  value={latest?.active_energy_generated_total_kwh ?? 0}
+                  suffix="kWh"
+                  decimals={3}
+                  delayMs={100}
+                />
+                <KpiCard
+                  icon={Signal}
+                  label="Sinal GSM"
+                  value={gsm ?? 0}
+                  suffix="dBm"
+                  decimals={0}
+                  tone={gsm === null || gsm < -90 ? 'danger' : 'default'}
+                  hint={gsmLabel(gsm)}
+                  hintTone={gsmHintTone(gsm)}
+                  delayMs={150}
+                />
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* ── Balanço energético (full width) ────────────────────────────── */}
         {!isLoading && (
           <EnergyBalanceChart
             bars={bars}
             windowKey={windowKey}
-            muted={data ? !data.online : false}
+            muted={muted}
             lastSeenUtc={data?.last_seen_utc}
             delayMs={100}
             chartHeightClass={CHART_HEIGHT}
           />
         )}
 
-        {/* Linha — potência ativa + reativa */}
-        {!isLoading && powerSeries.some((s) => s.data.length > 0) && (
-          <HistoryChart
-            title="Potência"
-            unit="W"
-            series={powerSeries}
-            windowKey={wk}
-            chartHeightClass={CHART_HEIGHT}
-            delayMs={150}
-            muted={data ? !data.online : false}
-            lastSeenUtc={data?.last_seen_utc}
-          />
+        {/* ── Potência + Tensão (2 colunas) ──────────────────────────────── */}
+        {!isLoading && (hasPower || hasVoltage) && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {hasPower && (
+              <HistoryChart
+                title="Potência"
+                unit="W"
+                series={powerSeries}
+                windowKey={wk}
+                chartHeightClass={CHART_HEIGHT}
+                delayMs={150}
+                muted={muted}
+                lastSeenUtc={data?.last_seen_utc}
+              />
+            )}
+            {hasVoltage && (
+              <HistoryChart
+                title="Tensão por fase"
+                unit="V"
+                series={voltageSeries}
+                windowKey={wk}
+                chartHeightClass={CHART_HEIGHT}
+                delayMs={200}
+                yDomain="robust"
+                muted={muted}
+                lastSeenUtc={data?.last_seen_utc}
+              />
+            )}
+          </div>
         )}
 
-        {/* Linha — tensões por fase */}
-        {!isLoading && voltageSeries.some((s) => s.data.length > 0) && (
-          <HistoryChart
-            title="Tensão por fase"
-            unit="V"
-            series={voltageSeries}
-            windowKey={wk}
-            chartHeightClass={CHART_HEIGHT}
-            delayMs={200}
-            yDomain="robust"
-            muted={data ? !data.online : false}
-            lastSeenUtc={data?.last_seen_utc}
-          />
+        {/* ── Corrente + FP (2 colunas) ──────────────────────────────────── */}
+        {!isLoading && (hasCurrent || hasPf) && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {hasCurrent && (
+              <HistoryChart
+                title="Corrente total"
+                unit="A"
+                series={currentSeries}
+                windowKey={wk}
+                chartHeightClass={CHART_HEIGHT}
+                delayMs={250}
+                muted={muted}
+                lastSeenUtc={data?.last_seen_utc}
+              />
+            )}
+            {hasPf && (
+              <HistoryChart
+                title="Fator de potência"
+                unit=""
+                series={pfSeries}
+                windowKey={wk}
+                chartHeightClass={CHART_HEIGHT}
+                delayMs={300}
+                yDomain={[0, 1]}
+                muted={muted}
+                lastSeenUtc={data?.last_seen_utc}
+              />
+            )}
+          </div>
         )}
 
-        {/* Linha — corrente total */}
-        {!isLoading && currentSeries[0].data.length > 0 && (
-          <HistoryChart
-            title="Corrente total"
-            unit="A"
-            series={currentSeries}
-            windowKey={wk}
-            chartHeightClass={CHART_HEIGHT}
-            delayMs={250}
-            muted={data ? !data.online : false}
-            lastSeenUtc={data?.last_seen_utc}
-          />
-        )}
-
-        {/* Linha — fator de potência */}
-        {!isLoading && pfSeries[0].data.length > 0 && (
-          <HistoryChart
-            title="Fator de potência"
-            unit=""
-            series={pfSeries}
-            windowKey={wk}
-            chartHeightClass={CHART_HEIGHT}
-            delayMs={300}
-            yDomain={[0, 1]}
-            muted={data ? !data.online : false}
-            lastSeenUtc={data?.last_seen_utc}
-          />
-        )}
-
-        {/* Linha — energia acumulada */}
-        {!isLoading && accumSeries.some((s) => s.data.length > 0) && (
+        {/* ── Energia acumulada (full width) ─────────────────────────────── */}
+        {!isLoading && hasAccum && (
           <HistoryChart
             title="Energia acumulada"
             unit="kWh"
@@ -356,12 +417,12 @@ export default function EnergyDashboard() {
             windowKey={wk}
             chartHeightClass={CHART_HEIGHT}
             delayMs={350}
-            muted={data ? !data.online : false}
+            muted={muted}
             lastSeenUtc={data?.last_seen_utc}
           />
         )}
 
-        {/* Estado vazio — sem medições */}
+        {/* Estado vazio */}
         {!isLoading && !error && bars.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center shadow-soft">
             <Battery className="mx-auto h-8 w-8 text-muted-foreground/60" />
@@ -372,15 +433,13 @@ export default function EnergyDashboard() {
           </div>
         )}
 
-        {/* Rodapé — última atualização */}
+        {/* Rodapé */}
         {data?.last_seen_utc && (
           <p className="pb-4 text-center text-[11px] text-muted-foreground">
             Última leitura:{' '}
             <span className="tabular-nums text-foreground/70">
               {fmtLastSeen(data.last_seen_utc)}
             </span>
-            {' · '}
-            Atualiza a cada {AUTO_REFRESH_MS / 1000}s
           </p>
         )}
       </main>

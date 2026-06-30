@@ -1,5 +1,5 @@
 import {
-  BarChart, Bar, CartesianGrid, Label, ReferenceLine,
+  BarChart, Bar, CartesianGrid, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import type { EnergyBar, EnergyWindowKey } from '../../types/energy';
@@ -98,18 +98,20 @@ export function EnergyBalanceChart({
       className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in"
       style={{ animationDelay: `${delayMs}ms` }}
     >
-      <div className="flex items-start justify-between gap-3 mb-1">
+      <div className="flex items-start justify-between gap-3 pb-3 mb-4 border-b border-border">
         <div>
           <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Energia</p>
           <h3 className="mt-1 text-lg font-semibold text-foreground">Balanço por hora</h3>
         </div>
-        <div className="flex items-center gap-3 text-[11px] mt-1">
+        <div className="flex items-center gap-4 text-[11px] mt-1">
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-primary opacity-80" />
+            <span className="font-medium" style={{ color: 'hsl(var(--primary))' }}>↑</span>
             <span className="text-muted-foreground">Geração</span>
           </span>
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-destructive opacity-80" />
+            <span className="font-medium" style={{ color: 'hsl(var(--destructive))' }}>↓</span>
             <span className="text-muted-foreground">Consumo</span>
           </span>
         </div>
@@ -148,22 +150,7 @@ export function EnergyBalanceChart({
               tickCount={7}
               tickFormatter={yTickFmt}
               unit=" kWh"
-            >
-              <Label
-                value="↑ geração"
-                angle={-90}
-                position="insideTopLeft"
-                offset={8}
-                style={{ fontSize: 9, fill: 'hsl(var(--primary))', textTransform: 'uppercase', letterSpacing: '0.15em' }}
-              />
-              <Label
-                value="↓ consumo"
-                angle={-90}
-                position="insideBottomLeft"
-                offset={8}
-                style={{ fontSize: 9, fill: 'hsl(var(--destructive))', textTransform: 'uppercase', letterSpacing: '0.15em' }}
-              />
-            </YAxis>
+            />
 
             <Tooltip
               content={<TooltipContent />}

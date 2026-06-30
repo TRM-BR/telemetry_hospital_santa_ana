@@ -17,6 +17,7 @@ export interface EnergyLatest {
   voltage_phase_a_v: number | null;
   voltage_phase_b_v: number | null;
   voltage_phase_c_v: number | null;
+  voltage_avg_v: number | null;
   current_total_a: number | null;
   power_factor_total: number | null;
   active_energy_consumed_total_kwh: number | null;
