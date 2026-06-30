@@ -58,18 +58,18 @@ function TooltipContent({ active, payload, label: ts }: any) {
       <p style={{ marginBottom: 8, color: 'hsl(var(--muted-foreground))', fontSize: 11 }}>{time}</p>
       {gen !== undefined && gen > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: 'hsl(var(--primary))', flexShrink: 0 }} />
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'hsl(var(--primary))', flexShrink: 0 }} />
           <span style={{ color: 'hsl(var(--muted-foreground))', flex: 1 }}>Geração</span>
-          <span style={{ fontWeight: 700, color: 'hsl(var(--foreground))', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontWeight: 700, color: 'hsl(var(--primary))', fontVariantNumeric: 'tabular-nums' }}>
             +{gen.toFixed(3)} kWh
           </span>
         </div>
       )}
       {con !== undefined && con > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: 'hsl(var(--destructive))', flexShrink: 0 }} />
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'hsl(var(--destructive))', flexShrink: 0 }} />
           <span style={{ color: 'hsl(var(--muted-foreground))', flex: 1 }}>Consumo</span>
-          <span style={{ fontWeight: 700, color: 'hsl(var(--foreground))', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontWeight: 700, color: 'hsl(var(--destructive))', fontVariantNumeric: 'tabular-nums' }}>
             {(-con).toFixed(3)} kWh
           </span>
         </div>
@@ -82,11 +82,10 @@ export function EnergyBalanceChart({
   bars,
   windowKey,
   delayMs = 0,
-  chartHeightClass = 'h-[300px]',
+  chartHeightClass = 'h-[280px]',
   muted,
   lastSeenUtc,
 }: EnergyBalanceChartProps) {
-  // Geração → positivo (barra para cima); consumo → negativo (barra para baixo)
   const chartData = bars.map((b) => ({
     t: b.t,
     generated: b.generated_kwh,
@@ -95,96 +94,100 @@ export function EnergyBalanceChart({
 
   return (
     <div
-      className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in"
+      className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft animate-drop-in"
       style={{ animationDelay: `${delayMs}ms` }}
     >
-      <div className="flex items-start justify-between gap-3 pb-3 mb-4 border-b border-border">
+      {/* Header faixa v0 */}
+      <div className="flex items-start justify-between gap-4 border-b border-border bg-muted/30 px-5 py-4">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Energia</p>
-          <h3 className="mt-1 text-lg font-semibold text-foreground">Balanço por hora</h3>
+          <h3 className="text-base font-semibold text-foreground">Balanço energético</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Geração vs. consumo ao longo do período</p>
         </div>
-        <div className="flex items-center gap-4 text-[11px] mt-1">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-primary opacity-80" />
-            <span className="font-medium" style={{ color: 'hsl(var(--primary))' }}>↑</span>
-            <span className="text-muted-foreground">Geração</span>
+        <div className="flex items-center gap-4 pt-0.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <span className="inline-block size-2.5 rounded-full bg-primary" />
+            Geração
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-destructive opacity-80" />
-            <span className="font-medium" style={{ color: 'hsl(var(--destructive))' }}>↓</span>
-            <span className="text-muted-foreground">Consumo</span>
+          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <span className="inline-block size-2.5 rounded-full bg-destructive" />
+            Consumo
           </span>
         </div>
       </div>
 
-      {muted && (
-        <p className="mb-2 text-[11px] text-muted-foreground">
-          Sem sinal · últimos dados:{' '}
-          <span className="tabular-nums text-foreground/70">{formatLastSeen(lastSeenUtc)}</span>
-        </p>
-      )}
+      {/* Chart */}
+      <div className="relative px-2 pt-4 pb-1">
+        {muted && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center">
+            <span className="rounded-md border border-border bg-card/90 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
+              Sem sinal · últimos dados:{' '}
+              <span className="tabular-nums text-foreground/70">{formatLastSeen(lastSeenUtc)}</span>
+            </span>
+          </div>
+        )}
 
-      <div className={cn('relative w-full transition-all', chartHeightClass, muted && 'opacity-55 grayscale')}>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
-            <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 4" vertical={false} />
+        <div className={cn('relative w-full transition-all', chartHeightClass, muted && 'opacity-50 grayscale')}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }} barCategoryGap="22%">
+              <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 4" vertical={false} />
 
-            <XAxis
-              dataKey="t"
-              type="number"
-              scale="time"
-              domain={['dataMin', 'dataMax']}
-              tickFormatter={(v: number) => formatTime(v, windowKey)}
-              stroke="hsl(var(--muted-foreground))"
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-              minTickGap={44}
-            />
-            <YAxis
-              stroke="hsl(var(--muted-foreground))"
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-              width={52}
-              tickCount={7}
-              tickFormatter={yTickFmt}
-              unit=" kWh"
-            />
+              <XAxis
+                dataKey="t"
+                type="number"
+                scale="time"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={(v: number) => formatTime(v, windowKey)}
+                stroke="hsl(var(--muted-foreground))"
+                tick={{ fontSize: 11 }}
+                tickLine={false}
+                axisLine={false}
+                minTickGap={44}
+              />
+              <YAxis
+                stroke="hsl(var(--muted-foreground))"
+                tick={{ fontSize: 11 }}
+                tickLine={false}
+                axisLine={false}
+                width={52}
+                tickCount={7}
+                tickFormatter={yTickFmt}
+                unit=" kWh"
+              />
 
-            <Tooltip
-              content={<TooltipContent />}
-              cursor={{ fill: 'hsl(var(--muted))', fillOpacity: 0.35 }}
-            />
+              <Tooltip
+                content={<TooltipContent />}
+                cursor={{ fill: 'hsl(var(--muted))', fillOpacity: 0.35 }}
+              />
 
-            <ReferenceLine
-              y={0}
-              stroke="hsl(var(--muted-foreground))"
-              strokeWidth={1.5}
-            />
+              <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1.5} />
 
-            {/* Geração — barras para cima */}
-            <Bar
-              dataKey="generated"
-              name="Geração"
-              fill="hsl(var(--primary))"
-              fillOpacity={0.75}
-              isAnimationActive={false}
-              radius={[3, 3, 0, 0]}
-              stackId="stack"
-            />
-            {/* Consumo — barras para baixo (valor já negativo) */}
-            <Bar
-              dataKey="consumed"
-              name="Consumo"
-              fill="hsl(var(--destructive))"
-              fillOpacity={0.75}
-              isAnimationActive={false}
-              radius={[0, 0, 3, 3]}
-              stackId="stack"
-            />
-          </BarChart>
-        </ResponsiveContainer>
+              <Bar
+                dataKey="generated"
+                name="Geração"
+                fill="hsl(var(--primary))"
+                fillOpacity={0.8}
+                isAnimationActive={false}
+                radius={[3, 3, 0, 0]}
+                stackId="stack"
+              />
+              <Bar
+                dataKey="consumed"
+                name="Consumo"
+                fill="hsl(var(--destructive))"
+                fillOpacity={0.8}
+                isAnimationActive={false}
+                radius={[0, 0, 3, 3]}
+                stackId="stack"
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Footer ↑ geração / ↓ consumo */}
+      <div className="flex items-center justify-between px-5 pb-3 pt-1 text-[0.7rem] font-medium uppercase tracking-wide">
+        <span className="text-primary">↑ geração</span>
+        <span className="text-destructive">↓ consumo</span>
       </div>
     </div>
   );
