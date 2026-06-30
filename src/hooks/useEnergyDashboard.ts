@@ -8,7 +8,6 @@ const DEV_MOCK_FALLBACK_ENABLED = import.meta.env.VITE_ENABLE_MOCKS !== 'false';
 
 function hasEnergyData(data: EnergyDashboardResponse): boolean {
   return (
-    data.last_seen_utc !== null ||
     data.bars.length > 0 ||
     Object.values(data.series).some((points) => points.length > 0)
   );
