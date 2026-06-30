@@ -94,7 +94,7 @@ export function AppSidebar() {
       >
         <div className="flex items-center justify-center w-full">
           <img
-            src="/santana-coat.png"
+            src="/brasao_santana_de_parnaiba.webp"
             alt="Brasão"
             className={cn(
               'object-contain transition-all duration-500',

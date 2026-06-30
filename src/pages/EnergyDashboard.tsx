@@ -25,12 +25,6 @@ function fmtLastSeen(iso: string | null | undefined): string {
   return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
 }
 
-function fmtPower(w: number | null): string {
-  if (w === null) return '—';
-  const abs = Math.abs(w);
-  if (abs >= 1000) return `${(w / 1000).toFixed(2)} kW`;
-  return `${w.toFixed(1)} W`;
-}
 
 function toChartSeries(
   pts: EnergySeriesPoint[] | undefined,
