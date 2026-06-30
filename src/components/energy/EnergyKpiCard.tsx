@@ -19,6 +19,7 @@ interface EnergyKpiCardProps {
   spark?: number[];
   featured?: boolean;
   loading?: boolean;
+  muted?: boolean;
   delayMs?: number;
 }
 
@@ -143,6 +144,7 @@ export function EnergyKpiCard({
   spark,
   featured = false,
   loading,
+  muted = false,
   delayMs = 0,
 }: EnergyKpiCardProps) {
   const animated = useCountUp(value, 650);
@@ -171,8 +173,9 @@ export function EnergyKpiCard({
     <div
       className={cn(
         'group relative overflow-hidden rounded-[14px] border border-border bg-card animate-drop-in',
-        'transition-[box-shadow] duration-300',
+        'transition-[box-shadow,opacity,filter] duration-300',
         featured && 'ring-1 ring-border',
+        muted && 'opacity-60 grayscale',
       )}
       style={{
         boxShadow: toneShadow[tone],

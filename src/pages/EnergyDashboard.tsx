@@ -304,6 +304,7 @@ export default function EnergyDashboard() {
                 hint={pAct < 0 ? 'Injetando na rede' : 'Consumindo da rede'}
                 hintTone={pAct < 0 ? 'primary' : 'default'}
                 spark={spark('active_power_total_w')}
+                muted={muted}
                 delayMs={0}
               />
               <EnergyKpiCard
@@ -315,6 +316,7 @@ export default function EnergyDashboard() {
                 icon={Gauge}
                 tone="default"
                 spark={spark('voltage_phase_a_v')}
+                muted={muted}
                 delayMs={60}
               />
               <EnergyKpiCard
@@ -326,6 +328,7 @@ export default function EnergyDashboard() {
                 icon={Activity}
                 tone="default"
                 spark={spark('current_total_a')}
+                muted={muted}
                 delayMs={120}
               />
               <EnergyKpiCard
@@ -337,6 +340,7 @@ export default function EnergyDashboard() {
                 icon={TrendingDown}
                 tone="danger"
                 spark={spark('active_energy_consumed_total_kwh')}
+                muted={muted}
                 delayMs={180}
               />
               <EnergyKpiCard
@@ -348,6 +352,7 @@ export default function EnergyDashboard() {
                 icon={TrendingUp}
                 tone="primary"
                 spark={spark('active_energy_generated_total_kwh')}
+                muted={muted}
                 delayMs={240}
               />
             </div>
@@ -365,6 +370,7 @@ export default function EnergyDashboard() {
                 icon={Activity}
                 tone="default"
                 spark={spark('reactive_power_total_var')}
+                muted={muted}
                 delayMs={0}
               />
               <EnergyKpiCard
@@ -376,6 +382,7 @@ export default function EnergyDashboard() {
                 hint={pf !== null ? (pf < 0.92 ? 'Abaixo do ideal' : 'Dentro do esperado') : undefined}
                 hintTone={pfTone(pf)}
                 spark={spark('power_factor_total')}
+                muted={muted}
                 delayMs={60}
               />
               <EnergyKpiCard
@@ -387,6 +394,7 @@ export default function EnergyDashboard() {
                 tone={gsmTone(gsm)}
                 hint={gsmLabel(gsm)}
                 hintTone={gsmTone(gsm)}
+                muted={muted}
                 delayMs={120}
               />
             </div>
@@ -396,110 +404,94 @@ export default function EnergyDashboard() {
           <section aria-labelledby="analise" className="space-y-4">
             <SectionHeading id="analise">Análise temporal</SectionHeading>
 
-            {bars.length === 0 && !hasPower && !hasVoltage && !hasCurrent && !hasPf && !hasAccum ? (
-              <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/20 px-6 py-16 text-center">
+            {/* Balanço full-width */}
+            <EnergyBalanceChart
+              bars={bars}
+              windowKey={windowKey}
+              muted={muted}
+              lastSeenUtc={data?.last_seen_utc}
+              delayMs={0}
+            />
+
+            {/* Potência + Tensão */}
+            <div className="grid gap-4 lg:grid-cols-2">
+              <HistoryChart
+                title="Potência"
+                unit="W"
+                series={powerSeries}
+                windowKey={wk}
+                chartHeightClass={CHART_HEIGHT}
+                delayMs={60}
+                muted={muted}
+                lastSeenUtc={data?.last_seen_utc}
+                variant="flat"
+                fillMode="line"
+              />
+              <HistoryChart
+                title="Tensão por fase"
+                unit="V"
+                series={voltageSeries}
+                windowKey={wk}
+                chartHeightClass={CHART_HEIGHT}
+                delayMs={120}
+                yDomain="robust"
+                muted={muted}
+                lastSeenUtc={data?.last_seen_utc}
+                variant="flat"
+                fillMode="line"
+              />
+            </div>
+
+            {/* Corrente + FP */}
+            <div className="grid gap-4 lg:grid-cols-2">
+              <HistoryChart
+                title="Corrente total"
+                unit="A"
+                series={currentSeries}
+                windowKey={wk}
+                chartHeightClass={CHART_HEIGHT}
+                delayMs={180}
+                muted={muted}
+                lastSeenUtc={data?.last_seen_utc}
+                variant="flat"
+                fillMode="line"
+              />
+              <HistoryChart
+                title="Fator de potência"
+                unit=""
+                series={pfSeries}
+                windowKey={wk}
+                chartHeightClass={CHART_HEIGHT}
+                delayMs={240}
+                yDomain={[0, 1]}
+                muted={muted}
+                lastSeenUtc={data?.last_seen_utc}
+                variant="flat"
+                fillMode="line"
+              />
+            </div>
+
+            {/* Energia acumulada full-width */}
+            <HistoryChart
+              title="Energia acumulada"
+              unit="kWh"
+              series={accumSeries}
+              windowKey={wk}
+              chartHeightClass={CHART_HEIGHT}
+              delayMs={300}
+              muted={muted}
+              lastSeenUtc={data?.last_seen_utc}
+              variant="flat"
+              fillMode="line"
+            />
+
+            {bars.length === 0 && !hasPower && !hasVoltage && !hasCurrent && !hasPf && !hasAccum && (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/20 px-6 py-10 text-center">
                 <Battery className="size-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
                   Sem medições no período · Aguardando dados do medidor SM-3EGW.
                 </p>
               </div>
-            ) : (
-              <>
-                {/* Balanço full-width */}
-                <EnergyBalanceChart
-                  bars={bars}
-                  windowKey={windowKey}
-                  muted={muted}
-                  lastSeenUtc={data?.last_seen_utc}
-                  delayMs={0}
-                />
-
-                {/* Potência + Tensão */}
-                {(hasPower || hasVoltage) && (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {hasPower && (
-                      <HistoryChart
-                        title="Potência"
-                        unit="W"
-                        series={powerSeries}
-                        windowKey={wk}
-                        chartHeightClass={CHART_HEIGHT}
-                        delayMs={60}
-                        muted={muted}
-                        lastSeenUtc={data?.last_seen_utc}
-                        variant="flat"
-                        fillMode="line"
-                      />
-                    )}
-                    {hasVoltage && (
-                      <HistoryChart
-                        title="Tensão por fase"
-                        unit="V"
-                        series={voltageSeries}
-                        windowKey={wk}
-                        chartHeightClass={CHART_HEIGHT}
-                        delayMs={120}
-                        yDomain="robust"
-                        muted={muted}
-                        lastSeenUtc={data?.last_seen_utc}
-                        variant="flat"
-                        fillMode="line"
-                      />
-                    )}
-                  </div>
-                )}
-
-                {/* Corrente + FP */}
-                {(hasCurrent || hasPf) && (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {hasCurrent && (
-                      <HistoryChart
-                        title="Corrente total"
-                        unit="A"
-                        series={currentSeries}
-                        windowKey={wk}
-                        chartHeightClass={CHART_HEIGHT}
-                        delayMs={180}
-                        muted={muted}
-                        lastSeenUtc={data?.last_seen_utc}
-                        variant="flat"
-                        fillMode="line"
-                      />
-                    )}
-                    {hasPf && (
-                      <HistoryChart
-                        title="Fator de potência"
-                        unit=""
-                        series={pfSeries}
-                        windowKey={wk}
-                        chartHeightClass={CHART_HEIGHT}
-                        delayMs={240}
-                        yDomain={[0, 1]}
-                        muted={muted}
-                        lastSeenUtc={data?.last_seen_utc}
-                        variant="flat"
-                        fillMode="line"
-                      />
-                    )}
-                  </div>
-                )}
-
-                {/* Energia acumulada full-width */}
-                {hasAccum && (
-                  <HistoryChart
-                    title="Energia acumulada"
-                    unit="kWh"
-                    series={accumSeries}
-                    windowKey={wk}
-                    chartHeightClass={CHART_HEIGHT}
-                    delayMs={300}
-                    muted={muted}
-                    lastSeenUtc={data?.last_seen_utc}
-                    variant="flat"
-                    fillMode="line"
-                  />
-                )}
-              </>
             )}
           </section>
 
