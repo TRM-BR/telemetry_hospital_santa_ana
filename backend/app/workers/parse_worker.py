@@ -450,7 +450,7 @@ class ParseWorker(WorkerRunner):
                     session, reading.device_external_id, raw_id, device_cache, installation_id_cache
                 )
                 if device_id is None:
-                    # Device não seedado — erro permanente; não tenta de novo.
+                    # Autodetect desligado ou upsert falhou — descarta (não retenta).
                     done_ids.append(raw_id)
                     continue
 
