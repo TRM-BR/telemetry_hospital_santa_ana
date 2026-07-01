@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   AreaChart, Area, CartesianGrid, ReferenceArea, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis, Legend,
@@ -113,6 +113,7 @@ export function HistoryChart({
 }: HistoryChartProps) {
 
   const isFlat = variant === 'flat';
+  const gradIdPrefix = useId();
 
   // ── zoom/pan state ─────────────────────────────────────────────────────────
   const [viewDomain, setViewDomain]           = useState<[number, number] | null>(null);
@@ -449,7 +450,7 @@ export function HistoryChart({
         >
           <defs>
             {series.map((s) => (
-              <linearGradient key={s.key} id={`grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+              <linearGradient key={s.key} id={`grad-${gradIdPrefix}-${s.key}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%"   stopColor={`hsl(${s.color})`} stopOpacity={0.18} />
                 <stop offset="100%" stopColor={`hsl(${s.color})`} stopOpacity={0} />
               </linearGradient>
@@ -530,7 +531,7 @@ export function HistoryChart({
               name={s.label}
               stroke={`hsl(${s.color})`}
               strokeWidth={2}
-              fill={`url(#grad-${s.key})`}
+              fill={`url(#grad-${gradIdPrefix}-${s.key})`}
               fillOpacity={fillMode === 'line' ? 0 : 1}
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               dot={(props: any): any => {

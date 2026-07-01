@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Droplets } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { api } from '../services/api';
-import { isSignalLost, fillSilenceWithZeros } from '../lib/series';
+import { isSignalLost } from '../lib/series';
 import { todaySaoPaulo } from '../lib/shifts';
 
 import FiltersBar from '../components/dashboard/FiltersBar';
@@ -21,19 +21,19 @@ import type {
 
 function groupLabel(i: number) { return `Grupo ${i + 1}`; }
 
-function buildSeries(devices: DashDevice[], metric: string, winStart: number, nowMs: number): ChartSeries[] {
+function buildSeries(devices: DashDevice[], metric: string): ChartSeries[] {
   return devices
     .filter((d) => (d.series?.[metric]?.length ?? 0) > 0)
     .map((d, i) => ({
       key: `dev_${d.device_id}`,
       label: groupLabel(i),
       color: CHART_COLORS[i % CHART_COLORS.length],
-      data: fillSilenceWithZeros(d.series?.[metric] ?? [], winStart, nowMs),
+      data: [...(d.series?.[metric] ?? [])].sort((a, b) => a.t - b.t),
     }));
 }
 
-function buildSeriesForDevice(device: DashDevice, metric: string, idx: number, winStart: number, nowMs: number): ChartSeries[] {
-  const data = fillSilenceWithZeros(device.series?.[metric] ?? [], winStart, nowMs);
+function buildSeriesForDevice(device: DashDevice, metric: string, idx: number): ChartSeries[] {
+  const data = [...(device.series?.[metric] ?? [])].sort((a, b) => a.t - b.t);
   return [{
     key: `dev_${device.device_id}`,
     label: groupLabel(idx),
@@ -135,37 +135,26 @@ const Dashboard = () => {
   const devices = useMemo(() => data?.devices ?? [], [data]);
 
   // Linha 2: série por remota (individual)
-  const perDeviceLevelPct = useMemo(() => {
-    const now = Date.now();
-    const winStart = now - hours * 3_600_000;
-    return devices.map((d, i) => buildSeriesForDevice(d, 'level_pct', i, winStart, now));
-  }, [devices, hours]);
+  const perDeviceLevelPct = useMemo(
+    () => devices.map((d, i) => buildSeriesForDevice(d, 'level_pct', i)),
+    [devices],
+  );
 
   // Linha 3: comparativo multi-linha
-  const levelPctSeries = useMemo(() => {
-    const now = Date.now();
-    const winStart = now - hours * 3_600_000;
-    return buildSeries(devices, 'level_pct', winStart, now);
-  }, [devices, hours]);
+  const levelPctSeries = useMemo(() => buildSeries(devices, 'level_pct'), [devices]);
 
-  const levelMSeries = useMemo(() => {
-    const now = Date.now();
-    const winStart = now - hours * 3_600_000;
-    return buildSeries(devices, 'level_m', winStart, now);
-  }, [devices, hours]);
+  const levelMSeries = useMemo(() => buildSeries(devices, 'level_m'), [devices]);
 
   // Linha 4: vazão por grupo
-  const perDeviceFlowHourly = useMemo(() => {
-    const now = Date.now();
-    const winStart = now - hours * 3_600_000;
-    return devices.map((d, i) => buildSeriesForDevice(d, 'flow_hourly_lph', i, winStart, now));
-  }, [devices, hours]);
+  const perDeviceFlowHourly = useMemo(
+    () => devices.map((d, i) => buildSeriesForDevice(d, 'flow_hourly_lph', i)),
+    [devices],
+  );
 
-  const perDeviceFlowNet = useMemo(() => {
-    const now = Date.now();
-    const winStart = now - hours * 3_600_000;
-    return devices.map((d, i) => buildSeriesForDevice(d, 'flow_consumo_lph', i, winStart, now));
-  }, [devices, hours]);
+  const perDeviceFlowNet = useMemo(
+    () => devices.map((d, i) => buildSeriesForDevice(d, 'flow_consumo_lph', i)),
+    [devices],
+  );
 
   const installationName = data?.installation_name ?? 'Hospital Santa Ana';
 
@@ -270,7 +259,7 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Linha 2 — Comparativo multi-linha (sem dim: cada linha cai a zero no silêncio) */}
+        {/* Linha 2 — Comparativo multi-linha (linhas contínuas, sem dim) */}
         {devices.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-stretch">
             {levelPctSeries.length > 0 && (

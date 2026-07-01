@@ -92,17 +92,6 @@ export function AppSidebar() {
         className="p-4 border-b border-border flex flex-col items-center gap-2"
         style={{ minHeight: TOP_BAR_HEIGHT_PX }}
       >
-        <div className="flex items-center justify-center w-full">
-          <img
-            src="/brasao_santana_de_parnaiba.webp"
-            alt="Brasão"
-            className={cn(
-              'object-contain transition-all duration-500',
-              isOpen ? 'h-10 w-10' : 'h-8 w-8',
-            )}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-        </div>
         <div
           className={cn(
             'text-center transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] overflow-hidden',
