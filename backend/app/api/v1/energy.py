@@ -51,7 +51,11 @@ _SQL_DEVICE = text("""
     JOIN device_installations di ON di.device_id = d.id AND di.valid_to IS NULL
     WHERE di.installation_id = :installation_id
       AND d.is_active = true
-    ORDER BY d.id
+    ORDER BY (
+        SELECT MAX(em.collected_at_utc)
+        FROM energy_measurements em
+        WHERE em.device_id = d.id
+    ) DESC NULLS LAST, d.id
     LIMIT 1
 """)
 
