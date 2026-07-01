@@ -115,9 +115,9 @@ function AppContent() {
           <Route
             path="/remotas"
             element={
-              <RequireAuth>
+              <RequireRole roles={['admin']}>
                 <Remotas />
-              </RequireAuth>
+              </RequireRole>
             }
           />
           <Route

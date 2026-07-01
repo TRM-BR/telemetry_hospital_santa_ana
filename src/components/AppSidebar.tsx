@@ -49,10 +49,13 @@ export function useAppSidebar(): AppSidebarContextType {
 
 const BASE_NAV_ITEMS = [
   { to: '/menu',                        label: 'Menu',    Icon: MapIcon       },
-  { to: '/remotas',                     label: 'Remotas', Icon: Radio         },
   { to: '/instalacao/escola/energia',   label: 'Energia', Icon: Zap           },
   // { to: '/meteorologia', label: 'Clima', Icon: CloudRain  },
   { to: '/alertas',                     label: 'Avisos',  Icon: AlertTriangle },
+] as const;
+
+const ADMIN_NAV_ITEMS = [
+  { to: '/remotas', label: 'Remotas', Icon: Radio },
 ] as const;
 
 const APPROVER_NAV_ITEMS = [
@@ -69,6 +72,7 @@ export function AppSidebar() {
 
   const navItems = [
     ...BASE_NAV_ITEMS,
+    ...(role === 'admin' ? ADMIN_NAV_ITEMS : []),
     ...(role === 'approver' || role === 'admin' ? APPROVER_NAV_ITEMS : []),
   ];
 
