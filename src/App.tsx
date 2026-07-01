@@ -26,7 +26,13 @@ import Remotas from './pages/Remotas';
 import WeatherDashboard from './pages/WeatherDashboard';
 import EnergyDashboard from './pages/EnergyDashboard';
 import NotFound from './pages/NotFound';
-import { AppSidebar, AppSidebarProvider, useAppSidebar } from './components/AppSidebar';
+import {
+  AppSidebar,
+  AppSidebarProvider,
+  useAppSidebar,
+  SIDEBAR_COLLAPSED,
+  SIDEBAR_EXPANDED,
+} from './components/AppSidebar';
 
 function RequireAuth({ children }: { children: ReactElement }) {
   if (!isAuthenticated()) return <Navigate to="/" replace />;
@@ -37,7 +43,7 @@ const PUBLIC_PATHS = ['/', '/cadastro', '/cadastro/confirmar', '/esqueci-senha',
 
 function AppContent() {
   const location = useLocation();
-  const { width } = useAppSidebar();
+  const { pinned } = useAppSidebar();
   const isPublicPage = PUBLIC_PATHS.some(
     (p) => location.pathname === p || location.pathname.startsWith(p + '/'),
   );
@@ -49,7 +55,7 @@ function AppContent() {
         key={location.pathname}
         className="animate-page-enter"
         style={{
-          marginLeft: isPublicPage ? 0 : width,
+          marginLeft: isPublicPage ? 0 : (pinned ? SIDEBAR_EXPANDED : SIDEBAR_COLLAPSED),
           transition: 'margin-left 500ms cubic-bezier(0.22,1,0.36,1)',
         }}
       >
