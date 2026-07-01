@@ -167,6 +167,15 @@ class ParseWorker(WorkerRunner):
         SELECT id FROM devices WHERE external_id = :external_id LIMIT 1
     """)
 
+    # Auto-registro de energia: cria device com imei sintético 'sm3egw-<external_id>'
+    _SQL_ENERGY_DEVICE_UPSERT = text("""
+        INSERT INTO devices (imei, external_id, model, status, label, is_active, created_at)
+        VALUES (:imei, :external_id, :model, :status, :label, true, now())
+        ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE
+          SET external_id = EXCLUDED.external_id
+        RETURNING id
+    """)
+
     # INSERT energy_measurement — dedup por (device_id, collected_at_utc)
     _SQL_INSERT_ENERGY = text("""
         INSERT INTO energy_measurements (
@@ -304,11 +313,14 @@ class ParseWorker(WorkerRunner):
         external_id: str,
         raw_id: int,
         device_cache: dict[str, Optional[int]],
+        installation_id_cache: dict[str, Optional[int]],
     ) -> Optional[int]:
         """
         Resolve device_id pelo external_id (SM-3EGW).
-        Sem autodetecção — device deve estar seedado via migration 0023.
-        Retorna device_id ou None se não encontrado.
+        Autodetecção: no 1º payload válido, cria device (imei sintético
+        'sm3egw-<external_id>') e vincula à instalação de
+        energy_autodetect_attach_installation_slug (config).
+        Retorna device_id ou None se não encontrado/autodetect desligado.
         """
         if external_id in device_cache:
             return device_cache[external_id]
@@ -317,14 +329,71 @@ class ParseWorker(WorkerRunner):
             self._SQL_DEVICE_BY_EXTERNAL_ID, {"external_id": external_id}
         )
         dev = row.fetchone()
-        device_id = dev[0] if dev else None
+        if dev:
+            device_cache[external_id] = dev[0]
+            return dev[0]
 
-        if device_id is None:
-            self._log.error(
-                "parse_worker.energy_device_not_found",
+        # ── Device novo: autodetecção ────────────────────────────────────────
+        s = self._settings
+        if not s.device_autodetect_enabled:
+            self._log.warning(
+                "parse_worker.energy_autodetect_disabled_skip",
                 raw_id=raw_id,
                 external_id=external_id,
             )
+            device_cache[external_id] = None
+            return None
+
+        imei = f"sm3egw-{external_id}"
+        label = s.energy_autodetect_label_template.replace("{external_id}", external_id)
+
+        upsert_row = await session.execute(
+            self._SQL_ENERGY_DEVICE_UPSERT,
+            {
+                "imei": imei,
+                "external_id": external_id,
+                "model": s.energy_autodetect_model,
+                "status": s.device_autodetect_default_status,
+                "label": label,
+            },
+        )
+        new_dev = upsert_row.fetchone()
+        if not new_dev:
+            device_cache[external_id] = None
+            return None
+        device_id = new_dev[0]
+
+        # Resolve installation_id para o vínculo
+        attach_slug = s.energy_autodetect_attach_installation_slug
+        if attach_slug not in installation_id_cache:
+            inst_row = await session.execute(
+                self._SQL_INSTALLATION_BY_SLUG, {"slug": attach_slug}
+            )
+            inst = inst_row.fetchone()
+            installation_id_cache[attach_slug] = inst[0] if inst else None
+
+        installation_id = installation_id_cache[attach_slug]
+        if installation_id:
+            await session.execute(
+                self._SQL_DEVICE_INSTALLATION_LINK,
+                {"device_id": device_id, "installation_id": installation_id},
+            )
+        else:
+            self._log.warning(
+                "parse_worker.energy_autodetect_installation_missing",
+                raw_id=raw_id,
+                external_id=external_id,
+                attach_slug=attach_slug,
+            )
+
+        self._log.info(
+            "parse_worker.energy_device_auto_registered",
+            raw_id=raw_id,
+            external_id=external_id,
+            imei=imei,
+            device_id=device_id,
+            installation_id=installation_id,
+        )
 
         device_cache[external_id] = device_id
         return device_id
@@ -378,7 +447,7 @@ class ParseWorker(WorkerRunner):
 
                 reading = result_e.reading
                 device_id = await self._resolve_energy_device(
-                    session, reading.device_external_id, raw_id, device_cache
+                    session, reading.device_external_id, raw_id, device_cache, installation_id_cache
                 )
                 if device_id is None:
                     # Device não seedado — erro permanente; não tenta de novo.

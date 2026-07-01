@@ -188,6 +188,20 @@ class Settings(BaseSettings):
         description="Label provisório; {imei_suffix} = últimos 4 dígitos do IMEI.",
     )
 
+    # ── Autodetecção de devices de energia (SM-3EGW / /param_energ) ──────────
+    energy_autodetect_attach_installation_slug: str = Field(
+        "escola",
+        description="Instalação à qual devices de energia autodetectados são vinculados.",
+    )
+    energy_autodetect_label_template: str = Field(
+        "Medidor {external_id}",
+        description="Label provisório; {external_id} = campo 'id' do payload SM-3EGW.",
+    )
+    energy_autodetect_model: str = Field(
+        "SM-3EGW",
+        description="Model gravado no device autodetectado via /param_energ.",
+    )
+
     # ── Perfis analógicos por modelo (dict livre, lido do YAML) ─────────────
     # Estrutura: { "DTN-200-FPS0": { current_min_ma, current_max_ma, ... } }
     analog_profiles: dict[str, Any] = Field(
@@ -367,6 +381,25 @@ class Settings(BaseSettings):
             object.__setattr__(self, "device_autodetect_default_status", str(autodetect["default_status"]))
         if autodetect.get("label_template") and not os.getenv("TELEMETRY_DEVICE_AUTODETECT_LABEL_TEMPLATE"):
             object.__setattr__(self, "device_autodetect_label_template", str(autodetect["label_template"]))
+
+        # Autodetecção de devices de energia
+        energy_autodetect = data.get("energy_autodetect", {})
+        if energy_autodetect.get("attach_installation_slug") and not os.getenv(
+            "TELEMETRY_ENERGY_AUTODETECT_ATTACH_INSTALLATION_SLUG"
+        ):
+            object.__setattr__(
+                self,
+                "energy_autodetect_attach_installation_slug",
+                str(energy_autodetect["attach_installation_slug"]),
+            )
+        if energy_autodetect.get("label_template") and not os.getenv(
+            "TELEMETRY_ENERGY_AUTODETECT_LABEL_TEMPLATE"
+        ):
+            object.__setattr__(
+                self, "energy_autodetect_label_template", str(energy_autodetect["label_template"])
+            )
+        if energy_autodetect.get("model") and not os.getenv("TELEMETRY_ENERGY_AUTODETECT_MODEL"):
+            object.__setattr__(self, "energy_autodetect_model", str(energy_autodetect["model"]))
 
         # Perfis analógicos por modelo
         if data.get("analog_profiles"):

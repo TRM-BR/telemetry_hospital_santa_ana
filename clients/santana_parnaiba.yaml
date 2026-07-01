@@ -57,6 +57,13 @@ device_autodetect:
   default_status: auto_detected
   label_template: "Remota {imei_suffix}"   # imei_suffix = últimos 4 dígitos do IMEI
 
+# Autodetecção de devices de energia (SM-3EGW / tópico /param_energ).
+# Device criado automaticamente no 1º payload válido (campo "id" do payload).
+energy_autodetect:
+  attach_installation_slug: escola
+  label_template: "Medidor {external_id}"
+  model: SM-3EGW
+
 # Perfis analógicos por modelo de device.
 # Não é lista fechada de IMEIs — qualquer DTN-200-FPS0 herda este perfil.
 analog_profiles:
