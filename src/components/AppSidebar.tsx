@@ -102,10 +102,7 @@ export function AppSidebar() {
             isOpen ? 'opacity-100 max-h-20' : 'opacity-0 max-h-0 pointer-events-none',
           )}
         >
-          <p className="text-[13px] font-semibold text-foreground leading-tight">Hospital Santa Ana</p>
-          <p className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground leading-tight">
-            Santana do Parnaíba
-          </p>
+          <p className="text-[13px] font-semibold text-foreground leading-tight">Santana do Parnaíba</p>
         </div>
         <div className={cn('w-full flex justify-center', isOpen ? 'mt-1' : 'mt-0')}>
           <button
