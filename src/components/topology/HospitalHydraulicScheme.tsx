@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import type { TankGroup } from '../../types/telemetry';
 import { LoraNode } from './LoraNode';
-import { Manometer } from './Manometer';
 import { MiniTank } from './MiniTank';
 
 interface Props {
@@ -9,8 +8,6 @@ interface Props {
   vazao?: number;
   vazao1?: number;
   vazao2?: number;
-  pressao1?: number;
-  pressao2?: number;
 }
 
 const GROUPS = [
@@ -82,12 +79,10 @@ function GroupBlock({
   group,
   index,
   vazao,
-  pressao,
 }: {
   group: TankGroup;
   index: 0 | 1;
   vazao: number;
-  pressao: number;
 }) {
   const layout = GROUPS[index];
   const tankGap = 13;
@@ -129,7 +124,7 @@ function GroupBlock({
         strokeDasharray="3 4"
       />
       <text x={layout.x + 28} y={layout.y - 8} fontSize="9" fontWeight="700" fill="hsl(var(--foreground))" fontFamily="Inter, sans-serif">
-        Sensor LV
+        Sensor DTN-200-FPS0
       </text>
 
       {Array.from({ length: group.tanks }).map((_, tankIndex) => (
@@ -145,12 +140,11 @@ function GroupBlock({
 
       <FlowPipe d={pipeDown} width={10} />
       <polygon points={`${layout.pipeX},336 ${layout.pipeX - 7},321 ${layout.pipeX + 7},321`} fill="hsl(var(--primary-glow))" />
-      <Manometer x={layout.manometerX} y={275} value={pressao} label={index === 0 ? 'P1' : 'P2'} />
 
       <g transform={`translate(${layout.pipeX + (index === 0 ? -118 : 22)},340)`}>
         <rect width="96" height="26" rx="13" fill="hsl(205 80% 96%)" stroke="hsl(205 60% 78%)" />
         <text x="48" y="17" textAnchor="middle" fontSize="10" fontWeight="800" fill="hsl(var(--primary))" fontFamily="ui-monospace, monospace">
-          {vazao.toFixed(1)} L/min
+          {vazao.toFixed(1)} L/h
         </text>
       </g>
     </g>
@@ -186,8 +180,6 @@ export function HospitalHydraulicScheme({
   vazao = 0,
   vazao1,
   vazao2,
-  pressao1 = 3.4,
-  pressao2 = 3.2,
 }: Props) {
   const [group1, group2] = tankGroups;
   const flow1 = vazao1 ?? vazao * 0.56;
@@ -234,8 +226,7 @@ export function HospitalHydraulicScheme({
 
       <div className="relative mx-4 mb-6 overflow-x-auto rounded-2xl border border-border bg-card pt-12">
         <div className="pointer-events-none absolute right-4 top-4 z-10 hidden gap-2 lg:flex">
-          <Pill label="Vazão total" value={`${(flow1 + flow2).toFixed(1)} L/min`} />
-          <Pill label="Pressão" value={`${((pressao1 + pressao2) / 2).toFixed(2)} mca`} />
+          <Pill label="Vazão total" value={`${(flow1 + flow2).toFixed(1)} L/h`} />
         </div>
 
         <svg
@@ -318,8 +309,8 @@ export function HospitalHydraulicScheme({
             manifold superior
           </text>
 
-          <GroupBlock group={group1} index={0} vazao={flow1} pressao={pressao1} />
-          <GroupBlock group={group2} index={1} vazao={flow2} pressao={pressao2} />
+          <GroupBlock group={group1} index={0} vazao={flow1} />
+          <GroupBlock group={group2} index={1} vazao={flow2} />
 
           <Building />
           <FlowPipe d="M 682 330 L 682 376 L 830 376" width={10} noBase />

@@ -1,22 +1,19 @@
 import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Droplets, Gauge, Activity, AlertTriangle,
-  TrendingUp, TrendingDown, LineChart, Bell, MapPin,
+  ArrowLeft, Droplets, LineChart, Bell, MapPin,
 } from 'lucide-react';
 
-import {
-  installations, tankGroups, buildDashboardSnapshot, buildInstallationMetrics,
-} from '../mocks/hospitalSantaAnaMock';
+import { installations } from '../mocks/hospitalSantaAnaMock';
 import LiquidHero from '../components/installation/LiquidHero';
 import StatusRing from '../components/installation/StatusRing';
-import KpiCard from '../components/dashboard/KpiCard';
 import NavCard from '../components/installation/NavCard';
 import { HospitalHydraulicScheme } from '../components/topology/HospitalHydraulicScheme';
 import { InstallationAlertsCard } from '../components/dashboard/InstallationAlertsCard';
 import { useCountUp } from '../hooks/useCountUp';
+import { useInstallationDashboard } from '../hooks/useInstallationDashboard';
 import { cn } from '../lib/cn';
-import type { InstallationStatus } from '../types/telemetry';
+import type { InstallationStatus, TankGroup } from '../types/telemetry';
 
 const statusLabel: Record<InstallationStatus, string> = {
   online:  'Online',
@@ -33,10 +30,37 @@ const Installation = () => {
     [id],
   );
 
-  const snapshot = useMemo(() => buildDashboardSnapshot('24h'), []);
-  const metrics = useMemo(() => buildInstallationMetrics(), []);
-  const consumoAnimated = useCountUp(metrics.consumoHoje, 1300);
-  const variacaoPositiva = metrics.variacaoPct >= 0;
+  const { data } = useInstallationDashboard(installation.id);
+
+  const consumoHoje = data?.consumption_summary?.total_m3 ?? 0;
+  const consumoAnimated = useCountUp(consumoHoje, 1300);
+
+  const isOnline = (data?.active_count ?? 0) > 0;
+  const ultimaLeituraMin = data?.last_seen_utc
+    ? Math.max(0, Math.round((Date.now() - new Date(data.last_seen_utc).getTime()) / 60_000))
+    : null;
+
+  const tankGroups: TankGroup[] = useMemo(
+    () => (data?.devices ?? []).map((d, i) => ({
+      id: `grupo-${i + 1}`,
+      name: d.group_name ?? `Grupo ${i + 1}`,
+      tanks: d.tank_count ?? 4,
+      capacityPerTankLiters: d.group_capacity_l ? d.group_capacity_l / (d.tank_count ?? 4) : 10_000,
+      totalCapacityLiters: d.group_capacity_l ?? 40_000,
+      levelPct: d.latest.percentual ?? 0,
+      status: d.active ? 'online' : 'offline',
+      estimatedAutonomyHours: 0,
+    })),
+    [data],
+  );
+
+  const flowByGroup = useMemo(
+    () => (data?.devices ?? []).map((d) => {
+      const series = d.series?.flow_consumo_lph ?? [];
+      return series.length ? series[series.length - 1].v : 0;
+    }),
+    [data],
+  );
 
   return (
     <div className="min-h-screen w-full bg-secondary">
@@ -102,23 +126,19 @@ const Installation = () => {
                 <span
                   className={cn(
                     'inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider backdrop-blur-sm',
-                    installation.status === 'online'  && 'bg-primary-glow/30 text-white',
-                    installation.status === 'alert'   && 'bg-accent/40 text-white',
-                    installation.status === 'offline' && 'bg-destructive/40 text-white',
+                    isOnline ? 'bg-primary-glow/30 text-white' : 'bg-destructive/40 text-white',
                   )}
                 >
                   <span
                     className={cn(
                       'h-1.5 w-1.5 rounded-full',
-                      installation.status === 'online'  && 'bg-primary-glow',
-                      installation.status === 'alert'   && 'bg-accent',
-                      installation.status === 'offline' && 'bg-destructive',
+                      isOnline ? 'bg-primary-glow' : 'bg-destructive',
                     )}
                   />
-                  {statusLabel[installation.status]}
+                  {statusLabel[isOnline ? 'online' : 'offline']}
                 </span>
                 <span className="text-[11px] text-primary-foreground/85">
-                  Atualizado há {metrics.ultimaLeituraMin} min
+                  {ultimaLeituraMin === null ? 'Sem leitura' : `Atualizado há ${ultimaLeituraMin} min`}
                 </span>
               </div>
             </div>
@@ -128,7 +148,7 @@ const Installation = () => {
               style={{ animationDelay: '500ms' }}
             >
               <div className="flex items-center gap-5">
-                <StatusRing status={installation.status}>
+                <StatusRing status={isOnline ? 'online' : 'offline'}>
                   <Droplets className="h-9 w-9" />
                 </StatusRing>
                 <div>
@@ -139,13 +159,6 @@ const Installation = () => {
                     {consumoAnimated.toFixed(2)}
                     <span className="ml-1 text-base font-medium text-primary-foreground/85">m³</span>
                   </p>
-                  <p className={cn(
-                    'mt-1 inline-flex items-center gap-1 text-xs font-medium',
-                    variacaoPositiva ? 'text-accent' : 'text-primary-glow',
-                  )}>
-                    {variacaoPositiva ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                    {Math.abs(metrics.variacaoPct).toFixed(1)}% vs. período anterior
-                  </p>
                 </div>
               </div>
             </div>
@@ -155,25 +168,9 @@ const Installation = () => {
         {/* ── Esquema hidráulico ───────────────────────── */}
         <HospitalHydraulicScheme
           tankGroups={tankGroups}
-          vazao={metrics.vazao}
-          vazao1={snapshot.vazao1}
-          vazao2={snapshot.vazao2}
-          pressao1={snapshot.pressao1}
-          pressao2={snapshot.pressao2}
+          vazao1={flowByGroup[0]}
+          vazao2={flowByGroup[1]}
         />
-
-        {/* ── Métricas em tempo real ───────────────────── */}
-        <section>
-          <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-3">
-            Métricas em tempo real
-          </p>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard icon={Gauge}         label="Vazão"      value={metrics.vazao}   suffix="L/min" decimals={1} spark={metrics.spark}                  delayMs={0}   />
-            <KpiCard icon={Activity}      label="Pressão"    value={metrics.pressao} suffix="MCA"   decimals={2} spark={metrics.spark.slice().reverse()} delayMs={80}  />
-            <KpiCard icon={Droplets}      label="Total (24h)" value={metrics.totalMes} suffix="m³"                spark={metrics.spark}                  delayMs={160} />
-            <KpiCard icon={AlertTriangle} label="Anomalias"  value={metrics.anomalias}                                                                  delayMs={240} tone={metrics.anomalias > 0 ? 'accent' : 'default'} />
-          </div>
-        </section>
 
         {/* ── Card de alertas ──────────────────────────── */}
         <InstallationAlertsCard installationId={id} />
@@ -185,7 +182,7 @@ const Installation = () => {
             <NavCard
               icon={LineChart}
               title="Dashboard"
-              description="Curvas de consumo, vazão, pressão e nível em tempo real."
+              description="Curvas de consumo, vazão e nível em tempo real."
               delayMs={0}
               onClick={() => navigate(`/instalacao/${installation.id}/dashboard`)}
             />
