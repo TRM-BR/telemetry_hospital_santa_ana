@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { ReactElement } from 'react';
+import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { isAuthenticated } from './services/auth';
 import { RequireRole } from './components/RequireRole';
@@ -47,6 +48,10 @@ function AppContent() {
   const isPublicPage = PUBLIC_PATHS.some(
     (p) => location.pathname === p || location.pathname.startsWith(p + '/'),
   );
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
 
   return (
     <>
