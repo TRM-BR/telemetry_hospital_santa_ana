@@ -68,7 +68,7 @@ const Login = () => {
 
           <div className="absolute top-8 left-8 flex items-center gap-3 text-primary-foreground z-10">
             <img
-              src="/santana-coat.png"
+              src="/brasao_santana_de_parnaiba.webp"
               alt="Brasão de Santana de Parnaíba"
               className="h-16 w-16 object-contain drop-shadow-md"
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -95,7 +95,7 @@ const Login = () => {
           <div>
             <div className="md:hidden flex items-center gap-3 mb-8 text-primary">
               <img
-                src="/santana-coat.png"
+                src="/brasao_santana_de_parnaiba.webp"
                 alt="Brasão"
                 className="h-14 w-14 object-contain"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

@@ -54,7 +54,7 @@ const Installation = () => {
 
           <div className="flex items-center gap-3 text-primary">
             <img
-              src="/santana-coat.png"
+              src="/brasao_santana_de_parnaiba.webp"
               alt="Brasão"
               className="h-10 w-10 object-contain"
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

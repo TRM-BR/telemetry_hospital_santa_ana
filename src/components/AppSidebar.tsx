@@ -1,6 +1,6 @@
 import { useState, createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
-import { LogOut, Map as MapIcon, AlertTriangle, Radio, Pin, CheckSquare } from 'lucide-react';
+import { LogOut, Map as MapIcon, AlertTriangle, Radio, Pin, CheckSquare, Zap } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/cn';
@@ -48,10 +48,11 @@ export function useAppSidebar(): AppSidebarContextType {
 }
 
 const BASE_NAV_ITEMS = [
-  { to: '/menu',    label: 'Menu',    Icon: MapIcon       },
-  { to: '/remotas', label: 'Remotas', Icon: Radio         },
+  { to: '/menu',                        label: 'Menu',    Icon: MapIcon       },
+  { to: '/remotas',                     label: 'Remotas', Icon: Radio         },
+  { to: '/instalacao/escola/energia',   label: 'Energia', Icon: Zap           },
   // { to: '/meteorologia', label: 'Clima', Icon: CloudRain  },
-  { to: '/alertas', label: 'Avisos',  Icon: AlertTriangle },
+  { to: '/alertas',                     label: 'Avisos',  Icon: AlertTriangle },
 ] as const;
 
 const APPROVER_NAV_ITEMS = [
@@ -91,17 +92,6 @@ export function AppSidebar() {
         className="p-4 border-b border-border flex flex-col items-center gap-2"
         style={{ minHeight: TOP_BAR_HEIGHT_PX }}
       >
-        <div className="flex items-center justify-center w-full">
-          <img
-            src="/santana-coat.png"
-            alt="Brasão"
-            className={cn(
-              'object-contain transition-all duration-500',
-              isOpen ? 'h-10 w-10' : 'h-8 w-8',
-            )}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-        </div>
         <div
           className={cn(
             'text-center transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] overflow-hidden',

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   AreaChart, Area, CartesianGrid, ReferenceArea, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis, Legend,
@@ -11,7 +11,7 @@ import { cn } from '../../lib/cn';
 export interface ChartSeries {
   key: string;
   label: string;
-  color: string;   // HSL triplet, e.g. "217 91% 60%"
+  color: string;   // HSL triplet or CSS var ref
   data: SeriesPoint[];
 }
 
@@ -33,9 +33,17 @@ interface HistoryChartProps {
   xDomain?: [number, number];
   muted?: boolean;
   lastSeenUtc?: string | null;
+  /** 'flat': card limpo v0 (sem eyebrow "Histórico", título compacto, legenda inline). Default: 'default'. */
+  variant?: 'default' | 'flat';
+  /** 'line': Area sem fill (linha limpa). Default: 'gradient'. */
+  fillMode?: 'gradient' | 'line';
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+function toColor(c: string): string {
+  return c.includes('(') ? c : `hsl(${c})`;
+}
 
 function formatTime(ts: number, win: WindowKey) {
   const d = new Date(ts);
@@ -100,7 +108,12 @@ export function HistoryChart({
   yDomain, lineType = 'monotone', tooltipNote, loading, referenceLines,
   chartHeightClass = 'h-[240px]', yAxisWidth = 36, zoomable = true,
   xDomain, muted, lastSeenUtc,
+  variant = 'default',
+  fillMode = 'gradient',
 }: HistoryChartProps) {
+
+  const isFlat = variant === 'flat';
+  const gradIdPrefix = useId();
 
   // ── zoom/pan state ─────────────────────────────────────────────────────────
   const [viewDomain, setViewDomain]           = useState<[number, number] | null>(null);
@@ -176,6 +189,18 @@ export function HistoryChart({
 
   // ── skeleton ───────────────────────────────────────────────────────────────
   if (loading) {
+    if (isFlat) {
+      return (
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-5 pt-4 pb-3">
+            <Skeleton className="h-4 w-48" />
+          </div>
+          <div className="px-2 py-2">
+            <Skeleton className={cn(chartHeightClass, 'w-full rounded-lg')} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
         <div className="flex items-start justify-between gap-3 mb-4">
@@ -361,12 +386,216 @@ export function HistoryChart({
 
   const isZoomed = viewDomain != null;
 
+  // ── zoom controls (shared between variants) ────────────────────────────────
+  const zoomControls = (
+    <>
+      {isZoomed && (
+        <button
+          type="button"
+          onClick={resetZoom}
+          title="Resetar zoom (ou double-click no gráfico)"
+          className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/20 transition-colors"
+        >
+          <RotateCcw className="h-3 w-3" />
+          Reset
+        </button>
+      )}
+      {zoomable && !isZoomed && (
+        <span
+          title="Esquerda: navegar · Direita: zoom · Scroll: zoom · 2×: resetar"
+          className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/50 select-none"
+        >
+          <ZoomIn className="h-3 w-3" />
+        </span>
+      )}
+    </>
+  );
+
+  // ── chart area (shared) ────────────────────────────────────────────────────
+  const chartArea = (
+    <div
+      ref={setChartEl}
+      className={cn(
+        'relative w-full select-none transition-all',
+        chartHeightClass,
+        muted && 'opacity-55 grayscale',
+        zoomable && (isPanningVisual ? 'cursor-grabbing' : 'cursor-grab'),
+      )}
+      onDoubleClick={handleDoubleClick}
+      onMouseLeave={handleMouseLeave}
+      onMouseUp={handleMouseUp}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {muted && (
+        isFlat ? (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+            <span className="rounded-md border border-border bg-card/90 px-3 py-1.5 text-[11px] font-medium text-muted-foreground backdrop-blur-sm shadow-sm">
+              Sem sinal · últimos dados: <span className="tabular-nums text-foreground/70">{formatLastSeen(lastSeenUtc)}</span>
+            </span>
+          </div>
+        ) : (
+          <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-border bg-card/90 px-3 py-1 text-[11px] text-muted-foreground shadow-soft backdrop-blur-sm">
+            Sem sinal · últimos dados: <span className="tabular-nums text-foreground/70">{formatLastSeen(lastSeenUtc)}</span>
+          </div>
+        )
+      )}
+
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart
+          data={data}
+          margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        >
+          <defs>
+            {series.map((s) => (
+              <linearGradient key={s.key} id={`grad-${gradIdPrefix}-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor={`hsl(${s.color})`} stopOpacity={0.18} />
+                <stop offset="100%" stopColor={`hsl(${s.color})`} stopOpacity={0} />
+              </linearGradient>
+            ))}
+          </defs>
+
+          <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 4" vertical={false} />
+
+          <XAxis
+            dataKey="t"
+            type="number"
+            scale="time"
+            domain={viewDomain ?? xDomain ?? ['auto', 'auto']}
+            tickFormatter={(v: number) => formatTime(v, windowKey)}
+            stroke="hsl(var(--muted-foreground))"
+            tick={{ fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            minTickGap={32}
+          />
+          <YAxis
+            stroke="hsl(var(--muted-foreground))"
+            tick={{ fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            width={yAxisWidth}
+            tickCount={6}
+            tickFormatter={yTickFmt}
+            domain={resolvedDomain}
+            allowDataOverflow={yDomain === 'robust'}
+          />
+
+          <Tooltip content={tooltipContent} />
+
+          {referenceLines?.map((rl) => (
+            <ReferenceLine
+              key={rl.value}
+              y={rl.value}
+              stroke={rl.color}
+              strokeDasharray="4 3"
+              strokeWidth={1.5}
+              label={{
+                value: rl.label,
+                position: 'insideTopRight',
+                fontSize: 10,
+                fill: rl.color,
+                fontWeight: 600,
+                dy: -4,
+              }}
+            />
+          ))}
+
+          {selStart != null && selEnd != null && (
+            <ReferenceArea
+              x1={selStart}
+              x2={selEnd}
+              stroke="hsl(var(--primary))"
+              strokeOpacity={0.6}
+              fill="hsl(var(--primary))"
+              fillOpacity={0.08}
+            />
+          )}
+
+          {series.length > 1 && !isFlat && (
+            <Legend
+              verticalAlign="top"
+              height={28}
+              iconType="circle"
+              wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}
+            />
+          )}
+
+          {series.map((s) => (
+            <Area
+              key={s.key}
+              type={lineType}
+              dataKey={s.key}
+              name={s.label}
+              stroke={`hsl(${s.color})`}
+              strokeWidth={2}
+              fill={`url(#grad-${gradIdPrefix}-${s.key})`}
+              fillOpacity={fillMode === 'line' ? 0 : 1}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              dot={(props: any): any => {
+                if (props.index !== data.length - 1) return <g key={`e-${props.index}`} />;
+                return (
+                  <g key={`ld-${s.key}`}>
+                    <circle cx={props.cx} cy={props.cy} r={8}
+                      fill={`hsl(${s.color})`} opacity={0.22} />
+                    <circle cx={props.cx} cy={props.cy} r={3.5}
+                      fill={`hsl(${s.color})`}
+                      stroke="hsl(var(--card))" strokeWidth={2} />
+                  </g>
+                );
+              }}
+              activeDot={{ r: 5, strokeWidth: 2, stroke: 'hsl(var(--card))' }}
+              isAnimationActive={false}
+              connectNulls={true}
+            />
+          ))}
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  // ── flat variant ───────────────────────────────────────────────────────────
+  if (isFlat) {
+    return (
+      <div
+        className="overflow-hidden rounded-xl border border-border bg-card shadow-sm animate-drop-in"
+        style={{ animationDelay: `${delayMs}ms` }}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border px-5 pt-4 pb-3">
+          <p className="text-sm font-medium text-foreground">
+            {title}
+            {unit && (
+              <span className="ml-1.5 font-normal text-muted-foreground">({unit})</span>
+            )}
+          </p>
+          <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+            {series.map((s) => (
+              <span key={s.key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ background: toColor(s.color) }}
+                />
+                {s.label}
+              </span>
+            ))}
+            {zoomControls}
+          </div>
+        </div>
+        <div className="px-2 py-2">
+          {chartArea}
+        </div>
+      </div>
+    );
+  }
+
+  // ── default variant ────────────────────────────────────────────────────────
   return (
     <div
       className="rounded-2xl border border-border bg-card p-5 shadow-soft animate-drop-in"
       style={{ animationDelay: `${delayMs}ms` }}
     >
-      {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
           <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Histórico</p>
@@ -387,162 +616,10 @@ export function HistoryChart({
               <span className="text-muted-foreground">{b.label}:</span> {b.value}
             </span>
           ))}
-          {isZoomed && (
-            <button
-              type="button"
-              onClick={resetZoom}
-              title="Resetar zoom (ou double-click no gráfico)"
-              className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/20 transition-colors"
-            >
-              <RotateCcw className="h-3 w-3" />
-              Reset
-            </button>
-          )}
-          {zoomable && !isZoomed && (
-            <span
-              title="Esquerda: navegar · Direita: zoom · Scroll: zoom · 2×: resetar"
-              className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/50 select-none"
-            >
-              <ZoomIn className="h-3 w-3" />
-            </span>
-          )}
+          {zoomControls}
         </div>
       </div>
-
-      {/* Chart */}
-      <div
-        ref={setChartEl}
-        className={cn(
-          'relative w-full select-none transition-all',
-          chartHeightClass,
-          muted && 'opacity-55 grayscale',
-          zoomable && (isPanningVisual ? 'cursor-grabbing' : 'cursor-grab'),
-        )}
-        onDoubleClick={handleDoubleClick}
-        onMouseLeave={handleMouseLeave}
-        onMouseUp={handleMouseUp}
-        onContextMenu={(e) => e.preventDefault()}
-      >
-        {muted && (
-          <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-border bg-card/90 px-3 py-1 text-[11px] text-muted-foreground shadow-soft backdrop-blur-sm">
-            Sem sinal · últimos dados: <span className="tabular-nums text-foreground/70">{formatLastSeen(lastSeenUtc)}</span>
-          </div>
-        )}
-
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={data}
-            margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-          >
-            <defs>
-              {series.map((s) => (
-                <linearGradient key={s.key} id={`grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor={`hsl(${s.color})`} stopOpacity={0.18} />
-                  <stop offset="100%" stopColor={`hsl(${s.color})`} stopOpacity={0} />
-                </linearGradient>
-              ))}
-            </defs>
-
-            <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 4" vertical={false} />
-
-            <XAxis
-              dataKey="t"
-              type="number"
-              scale="time"
-              domain={viewDomain ?? xDomain ?? ['auto', 'auto']}
-              tickFormatter={(v: number) => formatTime(v, windowKey)}
-              stroke="hsl(var(--muted-foreground))"
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-              minTickGap={32}
-            />
-            <YAxis
-              stroke="hsl(var(--muted-foreground))"
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-              width={yAxisWidth}
-              tickCount={6}
-              tickFormatter={yTickFmt}
-              domain={resolvedDomain}
-              allowDataOverflow={yDomain === 'robust'}
-            />
-
-            <Tooltip content={tooltipContent} />
-
-            {referenceLines?.map((rl) => (
-              <ReferenceLine
-                key={rl.value}
-                y={rl.value}
-                stroke={rl.color}
-                strokeDasharray="4 3"
-                strokeWidth={1.5}
-                label={{
-                  value: rl.label,
-                  position: 'insideTopRight',
-                  fontSize: 10,
-                  fill: rl.color,
-                  fontWeight: 600,
-                  dy: -4,
-                }}
-              />
-            ))}
-
-            {selStart != null && selEnd != null && (
-              <ReferenceArea
-                x1={selStart}
-                x2={selEnd}
-                stroke="hsl(var(--primary))"
-                strokeOpacity={0.6}
-                fill="hsl(var(--primary))"
-                fillOpacity={0.08}
-              />
-            )}
-
-            {series.length > 1 && (
-              <Legend
-                verticalAlign="top"
-                height={28}
-                iconType="circle"
-                wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}
-              />
-            )}
-
-            {series.map((s) => (
-              <Area
-                key={s.key}
-                type={lineType}
-                dataKey={s.key}
-                name={s.label}
-                stroke={`hsl(${s.color})`}
-                strokeWidth={2}
-                fill={`url(#grad-${s.key})`}
-                fillOpacity={1}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                dot={(props: any): any => {
-                  if (props.index !== data.length - 1) return <g key={`e-${props.index}`} />;
-                  return (
-                    <g key={`ld-${s.key}`}>
-                      <circle cx={props.cx} cy={props.cy} r={8}
-                        fill={`hsl(${s.color})`} opacity={0.22} />
-                      <circle cx={props.cx} cy={props.cy} r={3.5}
-                        fill={`hsl(${s.color})`}
-                        stroke="hsl(var(--card))" strokeWidth={2} />
-                    </g>
-                  );
-                }}
-                activeDot={{ r: 5, strokeWidth: 2, stroke: 'hsl(var(--card))' }}
-                isAnimationActive={false}
-                connectNulls={true}
-              />
-            ))}
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      {chartArea}
     </div>
   );
 }

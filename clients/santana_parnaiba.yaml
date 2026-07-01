@@ -33,6 +33,7 @@ mqtt:
   # Tópicos que a bridge ASSINA (telemetria). CMD é outbound — nunca aqui.
   telemetry_topics:
     - "SN50_analog/data"
+    - "/param_energ"
   command_topic_template: "SN50_analog/{imei}/CMD"
   # password: TELEMETRY_MQTT_PASSWORD em .env.santana_parnaiba
 

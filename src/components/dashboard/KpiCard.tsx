@@ -15,6 +15,12 @@ interface KpiCardProps {
   loading?: boolean;
 }
 
+const TONE_RING = {
+  default: 'from-primary-glow/40 to-primary/30',
+  accent:  'from-accent/50 to-accent/20',
+  danger:  'from-destructive/50 to-destructive/20',
+} as const;
+
 export function KpiCard({
   icon: Icon,
   label,
@@ -44,11 +50,7 @@ export function KpiCard({
     );
   }
 
-  const toneRing = {
-    default: 'from-primary-glow/40 to-primary/30',
-    accent:  'from-accent/50 to-accent/20',
-    danger:  'from-destructive/50 to-destructive/20',
-  }[tone];
+  const gradId = `spark-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
   return (
     <div
@@ -58,7 +60,7 @@ export function KpiCard({
       <div
         className={cn(
           'pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full bg-gradient-to-br opacity-60 blur-2xl',
-          toneRing,
+          TONE_RING[tone],
         )}
       />
       <div className="relative flex items-start justify-between">
@@ -75,7 +77,6 @@ export function KpiCard({
       </div>
 
       {spark && spark.length > 1 && (() => {
-        const gradId = `spark-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
         const min = Math.min(...spark);
         const max = Math.max(...spark);
         const range = max - min || 1;
@@ -90,7 +91,7 @@ export function KpiCard({
           <svg viewBox="0 0 100 28" className="mt-4 h-7 w-full" preserveAspectRatio="none">
             <defs>
               <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="hsl(var(--primary-glow))" stopOpacity="0.4" />
+                <stop offset="0%" stopColor="hsl(var(--primary-glow))" stopOpacity="0.35" />
                 <stop offset="100%" stopColor="hsl(var(--primary-glow))" stopOpacity="0" />
               </linearGradient>
             </defs>

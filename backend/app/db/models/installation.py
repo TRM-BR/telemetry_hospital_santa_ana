@@ -50,6 +50,11 @@ class Installation(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Tipo de monitoramento — usado pelo frontend para roteamento de tela
+    # e no futuro por perfis de alerta por local (migration 0023).
+    # 'hydraulic' = SN50/DTN  |  'energy' = SM-3EGW  |  NULL = não classificado
+    kind: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )

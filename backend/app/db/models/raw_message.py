@@ -37,8 +37,12 @@ class RawMessage(Base):
     # Payload bruto
     payload_raw: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # SHA256 do payload (dedup)
+    # SHA256 do payload bruto — coluna de auditoria pura (imutável)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    # Hash usado para deduplicação (migration 0020).
+    # SN50: dedup_hash = payload_hash. Energia: sha256(payload | received_at_second).
+    dedup_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     # ── Fila de parse (workflow) ─────────────────────────────────────────────
     parse_status: Mapped[str] = mapped_column(
@@ -52,11 +56,11 @@ class RawMessage(Base):
 
     # ── Constraints ──────────────────────────────────────────────────────────
     __table_args__ = (
-        # Dedup: mesmo origin + topic + payload nunca entra duas vezes
-        # (protege contra duplicatas QoS-1)
+        # Dedup: (origin, topic, dedup_hash) — migration 0020 trocou o índice.
+        # SN50: dedup_hash = payload_hash. Energia: inclui second de chegada.
         Index(
-            "uq_raw_origin_topic_hash",
-            "origin", "topic", "payload_hash",
+            "uq_raw_dedup",
+            "origin", "topic", "dedup_hash",
             unique=True,
         ),
         # Índice parcial para a fila — cobre só as linhas não-terminais.
