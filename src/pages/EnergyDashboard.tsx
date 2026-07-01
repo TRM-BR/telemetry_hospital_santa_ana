@@ -211,7 +211,7 @@ export default function EnergyDashboard() {
       {/* ── Header v0 ─────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur-md">
         <div
-          className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-4 sm:px-8 md:flex-row md:items-center md:justify-between"
+          className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-2 sm:px-8 md:flex-row md:items-center md:justify-between"
           style={{ minHeight: TOP_BAR_HEIGHT_PX }}
         >
           {/* Left */}
@@ -232,7 +232,7 @@ export default function EnergyDashboard() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">
-                  {data?.installation_name ?? 'Energia'}
+                  Monitoramento energético · Medidor SM-3EGW
                 </h1>
                 {data && (
                   <span
@@ -255,9 +255,6 @@ export default function EnergyDashboard() {
                   </span>
                 )}
               </div>
-              <p className="truncate text-sm text-muted-foreground">
-                Monitoramento energético · Medidor SM-3EGW
-              </p>
             </div>
           </div>
 
