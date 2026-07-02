@@ -478,6 +478,7 @@ export default function EnergyDashboard() {
               windowKey={wk}
               chartHeightClass={CHART_HEIGHT}
               delayMs={300}
+              yDomain="smart"
               muted={muted}
               lastSeenUtc={data?.last_seen_utc}
               variant="flat"
