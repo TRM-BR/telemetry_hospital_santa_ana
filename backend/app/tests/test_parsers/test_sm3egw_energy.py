@@ -199,6 +199,30 @@ class TestGsmNoSignal:
 
 
 # ---------------------------------------------------------------------------
+# rssi_modem — fallback quando rssi_gsm ausente (firmware real do MED1)
+# ---------------------------------------------------------------------------
+
+class TestGsmFallbackRssiModem:
+    def test_rssi_modem_used_when_rssi_gsm_absent(self):
+        payload = json.dumps({"id": "MED1", "rssi_modem": "-66"})
+        result = sm3egw_energy.parse(payload)
+        assert result.ok
+        assert result.reading.gsm_signal_rssi_dbm == -66
+
+    def test_rssi_modem_minus_999_becomes_none(self):
+        payload = json.dumps({"id": "MED1", "rssi_modem": "-999"})
+        result = sm3egw_energy.parse(payload)
+        assert result.ok
+        assert result.reading.gsm_signal_rssi_dbm is None
+
+    def test_rssi_gsm_takes_precedence_over_rssi_modem(self):
+        payload = json.dumps({"id": "MED1", "rssi_gsm": "-70", "rssi_modem": "-90"})
+        result = sm3egw_energy.parse(payload)
+        assert result.ok
+        assert result.reading.gsm_signal_rssi_dbm == -70
+
+
+# ---------------------------------------------------------------------------
 # Negativos preservados
 # ---------------------------------------------------------------------------
 

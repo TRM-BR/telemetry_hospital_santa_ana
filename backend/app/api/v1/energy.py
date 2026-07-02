@@ -267,7 +267,7 @@ async def get_energy_dashboard(
         va = _fv(lat["voltage_phase_a_v"])
         vb = _fv(lat["voltage_phase_b_v"])
         vc = _fv(lat["voltage_phase_c_v"])
-        _phases = [v for v in (va, vb, vc) if v is not None]
+        _phases = [v for v in (va, vb, vc) if v is not None and v > 0]
         voltage_avg = round(sum(_phases) / len(_phases), 2) if _phases else None
 
         latest = EnergyLatest(

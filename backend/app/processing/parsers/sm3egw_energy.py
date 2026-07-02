@@ -13,7 +13,8 @@ Regras:
   - Todos os campos de medição são opcionais: ausente → None (nunca 0).
   - Valores chegam como string — converter; não-conversível → None (não quebra lote).
   - Negativos preservados (pt pode ser negativo em geração).
-  - rssi_gsm = "-999" → None (sem sinal GSM).
+  - Sinal GSM: tenta rssi_gsm, cai para rssi_modem (varia por firmware).
+    "-999" → None (sem sinal GSM).
   - Acumulados (ept_c, ept_g, eqt_g) → string decimal preservada para NUMERIC(18,3).
   - Normalização de nomes de delta: "deltaeptc" ≡ "delta_ept_c" (underscore-insensitive).
   - Sem timestamp no payload → collected_at_utc vem de received_at_utc (worker).
@@ -109,8 +110,11 @@ def _parse_json(obj: dict) -> EnergyParseResult:
     if not device_id:
         return EnergyParseResult(status="failed", reason="missing_device_id")
 
-    # rssi_gsm: -999 → None (sem sinal GSM)
+    # Sinal GSM: campo varia por firmware — tenta rssi_gsm, cai para rssi_modem.
+    # -999 → None (sem sinal GSM)
     rssi_raw = _si(_get(obj_norm, "rssi_gsm"))
+    if rssi_raw is None:
+        rssi_raw = _si(_get(obj_norm, "rssi_modem"))
     gsm_rssi = None if rssi_raw == _GSM_NO_SIGNAL else rssi_raw
 
     reading = EnergyReading(

@@ -169,8 +169,7 @@ export default function EnergyDashboard() {
     (series[col] ?? []).slice(-30).map((p: EnergySeriesPoint) => p.v);
 
   const powerSeries = useMemo<ChartSeries[]>(() => [
-    toChartSeries(series.active_power_total_w,    'pt', 'Potência ativa',   'var(--primary)'),
-    toChartSeries(series.reactive_power_total_var, 'qt', 'Potência reativa', 'var(--accent)'),
+    toChartSeries(series.active_power_total_w, 'pt', 'Potência ativa', 'var(--primary)'),
   ], [series]);
 
   const voltageSeries = useMemo<ChartSeries[]>(() => [
@@ -188,9 +187,8 @@ export default function EnergyDashboard() {
   ], [series]);
 
   const accumSeries = useMemo<ChartSeries[]>(() => [
-    toChartSeries(series.active_energy_consumed_total_kwh,      'eptc', 'Consumo acumulado', 'hsl(var(--destructive))'),
-    toChartSeries(series.active_energy_generated_total_kwh,     'eptg', 'Geração acumulada', 'hsl(var(--primary))'),
-    toChartSeries(series.reactive_energy_generated_total_kvarh, 'eqtg', 'Geração reativa',   '262 83% 58%'),
+    toChartSeries(series.active_energy_consumed_total_kwh,  'eptc', 'Consumo acumulado', 'hsl(var(--destructive))'),
+    toChartSeries(series.active_energy_generated_total_kwh, 'eptg', 'Geração acumulada', 'hsl(var(--primary))'),
   ], [series]);
 
   const wk    = windowKey as unknown as WindowKey;
@@ -204,7 +202,22 @@ export default function EnergyDashboard() {
 
   const gsm  = latest?.gsm_signal_rssi_dbm ?? null;
   const pf   = latest?.power_factor_total  ?? null;
-  const pAct = latest?.active_power_total_w ?? 0;
+  const pActRaw = latest?.active_power_total_w ?? null;
+  const pAct = pActRaw ?? 0;
+
+  const FLOW_EPSILON_W = 1;
+  const flowHint = pActRaw === null
+    ? undefined
+    : Math.abs(pActRaw) < FLOW_EPSILON_W
+    ? 'Sem fluxo'
+    : pActRaw > 0
+    ? 'Gerando'
+    : 'Consumindo da rede';
+  const flowTone = pActRaw === null || Math.abs(pActRaw) < FLOW_EPSILON_W
+    ? 'default'
+    : pActRaw > 0
+    ? 'primary'
+    : 'default';
 
   return (
     <div className="min-h-screen w-full bg-secondary">
@@ -298,8 +311,8 @@ export default function EnergyDashboard() {
                 decimals={1}
                 icon={Zap}
                 tone="primary"
-                hint={pAct < 0 ? 'Injetando na rede' : 'Consumindo da rede'}
-                hintTone={pAct < 0 ? 'primary' : 'default'}
+                hint={flowHint}
+                hintTone={flowTone}
                 spark={spark('active_power_total_w')}
                 muted={muted}
                 delayMs={0}
@@ -355,21 +368,10 @@ export default function EnergyDashboard() {
             </div>
           </section>
 
-          {/* ── Qualidade e contexto (3 cartões) ────────────────────────── */}
+          {/* ── Qualidade e contexto (2 cartões) ────────────────────────── */}
           <section aria-labelledby="kpis-secundarios" className="space-y-3">
             <SectionHeading id="kpis-secundarios">Qualidade e contexto</SectionHeading>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <EnergyKpiCard
-                label="Potência reativa"
-                value={latest?.reactive_power_total_var ?? 0}
-                unit="VAr"
-                decimals={1}
-                icon={Activity}
-                tone="default"
-                spark={spark('reactive_power_total_var')}
-                muted={muted}
-                delayMs={0}
-              />
+            <div className="grid grid-cols-2 gap-4">
               <EnergyKpiCard
                 label="Fator de potência"
                 value={pf ?? 0}
