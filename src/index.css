@@ -70,6 +70,16 @@
   .transition-smooth  { transition: var(--transition-smooth); }
 }
 
+/* Recharts accessibility layer foca o <svg> ao clicar/arrastar e o browser
+   desenha o outline padrão de foco (quadrado preto). Sem estilo de foco
+   customizado nos gráficos — remove o outline nativo. */
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-surface:focus,
+.recharts-surface:focus-visible {
+  outline: none;
+}
+
 @layer utilities {
   .input-underline {
     @apply w-full bg-transparent border-0 border-b border-input pb-2 pt-1 text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary transition-colors;

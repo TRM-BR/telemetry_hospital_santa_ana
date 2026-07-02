@@ -211,8 +211,8 @@ export default function EnergyDashboard() {
     : Math.abs(pActRaw) < FLOW_EPSILON_W
     ? 'Sem fluxo'
     : pActRaw > 0
-    ? 'Gerando'
-    : 'Consumindo da rede';
+    ? 'Injetando'
+    : 'Consumindo';
   const flowTone = pActRaw === null || Math.abs(pActRaw) < FLOW_EPSILON_W
     ? 'default'
     : pActRaw > 0
